@@ -1,0 +1,25 @@
+{
+  "name": "moltforest",
+  "private": true,
+  "description": "MoltForest backend: ERC-8004 indexer, trust API, and workers for the agent economy on Monad",
+  "type": "module",
+  "packageManager": "pnpm@11.13.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:psql": "docker compose exec postgres psql -U postgres -d moltforest",
+    "indexer:up": "docker compose up -d --build indexer",
+    "indexer:logs": "docker compose logs -f indexer",
+    "indexer:stop": "docker compose stop indexer",
+    "indexer:install": "docker compose run --rm indexer-tools pnpm install",
+    "indexer:codegen": "docker compose run --rm indexer-tools pnpm codegen",
+    "indexer:test": "docker compose run --rm indexer-tools pnpm test",
+    "indexer:typecheck": "docker compose run --rm indexer-tools pnpm typecheck",
+    "dev:api": "pnpm --filter @moltforest/api dev",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  }
+}

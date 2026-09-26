@@ -1,0 +1,8 @@
+# apps/indexer is deliberately NOT part of this workspace: Envio ships only
+# Linux/macOS binaries, so the indexer is installed and run inside Docker.
+packages:
+  - apps/api
+  - packages/*
+
+allowBuilds:
+  esbuild: true

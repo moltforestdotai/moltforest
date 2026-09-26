@@ -1,0 +1,50 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# env files (keep example files)
+.env
+.env.*
+!.env.example
+
+# secrets
+*.pem
+*.key
+*.p12
+
+# logs / coverage / caches
+*.log
+logs/
+coverage/
+.cache/
+.turbo/
+.eslintcache
+
+# Envio generated code (recreated by `pnpm codegen`)
+apps/indexer/.envio/types.d.ts
+apps/indexer/generated/
+apps/indexer/build/
+
+# Foundry (phase 4)
+contracts/out/
+contracts/cache/
+contracts/broadcast/*/31337/
+
+# editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# AI agent tooling (local only; reinstall skills from skills-lock.json)
+/.agents/
+/.claude/
+apps/indexer/.claude/

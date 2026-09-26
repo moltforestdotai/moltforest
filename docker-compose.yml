@@ -1,0 +1,59 @@
+name: moltforest
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-moltforest}
+      POSTGRES_DB: moltforest
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d moltforest"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Envio HyperIndex. Writes ERC-8004 entities into the `envio` schema.
+  indexer:
+    build: ./apps/indexer
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &indexer-env
+      ENVIO_API_TOKEN: ${ENVIO_API_TOKEN:-}
+      ENVIO_CONFIG: ${ENVIO_CONFIG:-config.yaml}
+      ENVIO_PG_HOST: postgres
+      ENVIO_PG_PORT: "5432"
+      ENVIO_PG_USER: postgres
+      ENVIO_PG_PASSWORD: ${POSTGRES_PASSWORD:-moltforest}
+      ENVIO_PG_DATABASE: moltforest
+      ENVIO_PG_SCHEMA: envio
+      ENVIO_HASURA: "false"
+      ENVIO_TUI: "false"
+    ports:
+      - "9898:9898"
+    restart: unless-stopped
+
+  # One-off container for install / codegen / tests. Mounts the source so
+  # generated types (.envio/) and the lockfile land on the host.
+  indexer-tools:
+    profiles: ["tools"]
+    build: ./apps/indexer
+    working_dir: /app
+    volumes:
+      - ./apps/indexer:/app
+      - indexer-node-modules:/app/node_modules
+    environment:
+      <<: *indexer-env
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  indexer-node-modules:
