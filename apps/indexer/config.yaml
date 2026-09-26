@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=./node_modules/envio/evm.schema.json
+# ERC-8004 registries on Monad mainnet (143) and testnet (10143).
+# History comes from HyperSync (needs ENVIO_API_TOKEN); realtime follows the chain head.
+name: moltforest-indexer
+description: ERC-8004 Identity + Reputation registries on Monad
+disable_default_cross_chain: true
+address_format: lowercase
+field_selection:
+  transaction_fields: [hash]
+storage:
+  postgres:
+    column_name_format: snake_case
+
+contracts:
+  - name: IdentityRegistry
+    abi_file_path: ./abis/IdentityRegistry.json
+    events:
+      - event: Registered
+      - event: URIUpdated
+      - event: MetadataSet
+      - event: Transfer
+  - name: ReputationRegistry
+    abi_file_path: ./abis/ReputationRegistry.json
+    events:
+      - event: NewFeedback
+      - event: FeedbackRevoked
+      - event: ResponseAppended
+
+chains:
+  - id: 143
+    start_block: 0
+    contracts:
+      - name: IdentityRegistry
+        address: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+      - name: ReputationRegistry
+        address: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
+  - id: 10143
+    start_block: 0
+    contracts:
+      - name: IdentityRegistry
+        address: "0x8004A818BFB912233c491871b3d84c89A494BD9e"
+      - name: ReputationRegistry
+        address: "0x8004B663056A597Dffe9eCcC1965A193B7388713"

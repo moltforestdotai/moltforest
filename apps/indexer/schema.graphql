@@ -1,0 +1,103 @@
+# Entities are per chain (disable_default_cross_chain: true): the primary key is
+# (id, chainId), so agent #17 on mainnet and #17 on testnet are separate rows.
+
+# One ERC-8004 agent (an ERC-721 token in the Identity Registry).
+type Agent {
+  id: ID!                         # agentId as a decimal string
+  agentId: BigInt! @index
+  owner: String! @index           # lowercase address
+  agentWallet: String             # set via setAgentWallet (MetadataSet key "agentWallet")
+  agentUri: String!
+  uriKind: String!                # empty | data | ipfs | https | http | other
+  metadataStatus: String! @index  # ok | pending | invalid | empty | unsupported
+  metadataError: String
+  name: String
+  description: String
+  image: String
+  services: Json!                 # [{ name, endpoint, version? }]
+  serviceCount: Int! @index
+  x402Support: Boolean
+  active: Boolean
+  supportedTrust: [String!]!
+  registeredBlock: BigInt!
+  registeredAt: Timestamp!
+  registeredTx: String!
+  updatedBlock: BigInt!
+  updatedAt: Timestamp!
+  uriChangeCount: Int!
+  feedbackCount: Int! @index      # active (non-revoked) feedback
+  revokedFeedbackCount: Int!
+  uniqueReviewerCount: Int!
+  lastFeedbackAt: Timestamp
+  uriChanges: [AgentUriChange!]! @derivedFrom(field: "agent")
+  metadata: [AgentMetadataEntry!]! @derivedFrom(field: "agent")
+  feedback: [Feedback!]! @derivedFrom(field: "agent")
+  reviewers: [AgentReviewer!]! @derivedFrom(field: "agent")
+  feedbackResponses: [FeedbackResponse!]! @derivedFrom(field: "agent")
+}
+
+# History of URIUpdated events (endpoint churn is a risk signal later).
+type AgentUriChange {
+  id: ID!                         # <block>_<logIndex>
+  agent: Agent! @index
+  uri: String!
+  uriKind: String!
+  updatedBy: String!
+  blockNumber: BigInt!
+  timestamp: Timestamp!
+  txHash: String!
+}
+
+# Latest value of each on-chain metadata key (MetadataSet).
+type AgentMetadataEntry {
+  id: ID!                         # <agentId>_<key>
+  agent: Agent! @index
+  key: String!
+  value: String!                  # raw bytes, hex
+  blockNumber: BigInt!
+  updatedAt: Timestamp!
+}
+
+# One NewFeedback entry from the Reputation Registry.
+type Feedback {
+  id: ID!                         # <agentId>_<client>_<feedbackIndex>
+  agent: Agent! @index            # agent_id column holds the agentId (decimal string)
+  client: String! @index
+  feedbackIndex: BigInt!
+  value: BigInt!                  # int128, scaled by valueDecimals
+  valueDecimals: Int!
+  tag1: String!
+  tag2: String!
+  endpoint: String!
+  feedbackUri: String!
+  feedbackHash: String!           # links to a MoltForest receipt hash when verified (phase 4)
+  revoked: Boolean!
+  responseCount: Int!
+  blockNumber: BigInt!
+  timestamp: Timestamp!
+  txHash: String!
+  responses: [FeedbackResponse!]! @derivedFrom(field: "feedback")
+}
+
+type FeedbackResponse {
+  id: ID!                         # <block>_<logIndex>
+  feedback: Feedback! @index
+  agent: Agent! @index
+  responder: String! @index
+  responseUri: String!
+  responseHash: String!
+  blockNumber: BigInt!
+  timestamp: Timestamp!
+  txHash: String!
+}
+
+# One row per (agent, reviewer wallet); drives unique-reviewer counts and
+# reviewer-concentration signals.
+type AgentReviewer {
+  id: ID!                         # <agentId>_<client>
+  agent: Agent! @index
+  client: String! @index
+  feedbackCount: Int!
+  firstFeedbackAt: Timestamp!
+  lastFeedbackAt: Timestamp!
+}

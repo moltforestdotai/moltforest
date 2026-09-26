@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=./node_modules/envio/evm.schema.json
+# Smoke-test config: testnet only, public RPC only, starting at the current head.
+# Needs no ENVIO_API_TOKEN. Use it to check the pipeline end to end; it does NOT
+# load existing agents (use config.yaml with a token for that).
+# The public Monad RPC allows at most 100 blocks per eth_getLogs call.
+name: moltforest-indexer
+description: ERC-8004 Identity + Reputation registries on Monad (smoke test)
+disable_default_cross_chain: true
+address_format: lowercase
+field_selection:
+  transaction_fields: [hash]
+storage:
+  postgres:
+    column_name_format: snake_case
+
+contracts:
+  - name: IdentityRegistry
+    abi_file_path: ./abis/IdentityRegistry.json
+    events:
+      - event: Registered
+      - event: URIUpdated
+      - event: MetadataSet
+      - event: Transfer
+  - name: ReputationRegistry
+    abi_file_path: ./abis/ReputationRegistry.json
+    events:
+      - event: NewFeedback
+      - event: FeedbackRevoked
+      - event: ResponseAppended
+
+chains:
+  - id: 10143
+    start_block: latest
+    rpc:
+      - url: ${ENVIO_RPC_URL_TESTNET:-https://testnet-rpc.monad.xyz}
+        for: sync
+        initial_block_interval: 100
+        interval_ceiling: 100
+    contracts:
+      - name: IdentityRegistry
+        address: "0x8004A818BFB912233c491871b3d84c89A494BD9e"
+      - name: ReputationRegistry
+        address: "0x8004B663056A597Dffe9eCcC1965A193B7388713"

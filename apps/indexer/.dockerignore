@@ -1,0 +1,7 @@
+node_modules
+.envio/types.d.ts
+generated
+build
+.env
+.claude
+*.log
