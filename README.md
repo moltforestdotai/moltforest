@@ -11,6 +11,8 @@ Monad mainnet (143) + testnet (10143)
           ▼
 apps/indexer   Envio HyperIndex (Docker)  ──writes──▶  Postgres schema "envio"
                                                           │ reads
+apps/workers   enrichment (host): fetches remote agentURIs ──writes──▶  schema "app"
+                                                          │ reads both
 apps/api       Express + TypeScript (host) ◀──────────────┘
           │  REST: /v1/agents, /v1/sync-status, …
           ▼
@@ -20,7 +22,10 @@ moltforest-web, agents (MCP later)
 | Path | What it is |
 |---|---|
 | `apps/indexer` | Envio indexer for the ERC-8004 registries on both chains. Runs only in Docker: Envio has no Windows build. Not part of the pnpm workspace. |
-| `apps/api` | Express API. Reads the indexer's tables; never writes them. |
+| `apps/workers` | Enrichment worker: fetches registration files behind https/http/ipfs agentURIs (≈97% of agents) with SSRF protection, size/time limits and per-host rate limits. Writes `app.agent_profile`. |
+| `apps/api` | Express API. Reads the indexer's tables and the enrichment results; never writes the indexer's tables. |
+| `packages/registration` | Registration-file parser. The indexer gets a byte-identical copy (`pnpm sync:registration`; a test enforces it). |
+| `packages/db` | Drizzle schema and migrations for our own tables (schema `app`). |
 | `packages/chain` | Network config, registry addresses, the reconciler's on-chain agent-count check (Multicall3). |
 | `packages/types` | Public API response types. `moltforest-web/src/lib/api-types.ts` mirrors this file. |
 
@@ -36,6 +41,7 @@ moltforest-web, agents (MCP later)
 cp .env.example .env        # then fill in ENVIO_API_TOKEN
 pnpm install
 pnpm db:up                  # Postgres on localhost:5433
+pnpm db:migrate             # creates schema "app" (after changing packages/db/src/schema.ts: pnpm db:generate)
 ```
 
 ### Run the indexer
@@ -54,6 +60,14 @@ ENVIO_CONFIG=config.smoke.yaml pnpm indexer:up
 ```
 
 The indexer's health endpoint is <http://localhost:9898/healthz>.
+
+### Run the enrichment worker
+
+```bash
+pnpm dev:workers
+```
+
+New agents and changed agentURIs are fetched first; valid profiles are re-checked every ~6 h; failures back off from 5 minutes up to 24 h. A transient failure (timeout, 5xx, 429) keeps the last good profile; a definitive one (404, invalid JSON, blocked host) clears it.
 
 ### Run the API
 

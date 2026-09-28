@@ -2,6 +2,7 @@
 # Linux/macOS binaries, so the indexer is installed and run inside Docker.
 packages:
   - apps/api
+  - apps/workers
   - packages/*
 
 allowBuilds:

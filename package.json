@@ -18,7 +18,11 @@
     "indexer:codegen": "docker compose run --rm indexer-tools pnpm codegen",
     "indexer:test": "docker compose run --rm indexer-tools pnpm test",
     "indexer:typecheck": "docker compose run --rm indexer-tools pnpm typecheck",
+    "db:generate": "pnpm --filter @moltforest/db generate",
+    "db:migrate": "pnpm --filter @moltforest/db migrate",
+    "sync:registration": "node scripts/sync-registration.mjs",
     "dev:api": "pnpm --filter @moltforest/api dev",
+    "dev:workers": "pnpm --filter @moltforest/workers dev",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test"
   }

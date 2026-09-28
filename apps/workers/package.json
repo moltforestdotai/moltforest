@@ -1,0 +1,30 @@
+{
+  "name": "@moltforest/workers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Background workers: registration-file enrichment (more in later phases)",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@moltforest/db": "workspace:*",
+    "@moltforest/registration": "workspace:*",
+    "dotenv": "^17.2.3",
+    "ipaddr.js": "^2.5.0",
+    "pg": "^8.16.3",
+    "pino": "^10.0.0",
+    "undici": "^7.30.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.2",
+    "@types/pg": "^8.15.5",
+    "tsx": "^4.20.6",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.0"
+  }
+}
