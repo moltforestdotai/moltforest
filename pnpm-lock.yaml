@@ -13,6 +13,9 @@ importers:
       '@moltforest/chain':
         specifier: workspace:*
         version: link:../../packages/chain
+      '@moltforest/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@moltforest/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -158,6 +161,9 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.11(@types/node@24.13.6)(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(tsx@4.23.15))
 
   packages/registration:
     devDependencies:

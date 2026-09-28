@@ -14,6 +14,10 @@ const csv = (fallback: string) =>
 
 const EnvSchema = z.object({
   DATABASE_URL: z.string().url(),
+  DATABASE_SSL: z.enum(["disable", "require", "verify-full"]).default("disable"),
+  DATABASE_SSL_CA_FILE: z.string().optional(),
+  /** Queries wait for a free connection, so this can be far below the fetch concurrency. */
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
   INDEXER_DB_SCHEMA: schemaName.default("envio"),
   APP_DB_SCHEMA: schemaName.default("app"),
   ENRICH_BATCH_SIZE: z.coerce.number().int().min(1).max(5_000).default(500),

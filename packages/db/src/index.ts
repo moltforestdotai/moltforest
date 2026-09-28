@@ -3,6 +3,7 @@ import type pg from "pg";
 import * as schema from "./schema.js";
 
 export * from "./schema.js";
+export * from "./pool.js";
 export { schema };
 
 export function createDrizzle(pool: pg.Pool) {

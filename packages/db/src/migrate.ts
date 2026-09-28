@@ -1,10 +1,10 @@
 import { fileURLToPath } from "node:url";
-import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { databaseUrl } from "./env.js";
+import { createPool, sslFromEnv } from "./pool.js";
 
-const pool = new pg.Pool({ connectionString: databaseUrl() });
+const pool = createPool(databaseUrl(), { max: 1, ...sslFromEnv() });
 try {
   await migrate(drizzle(pool), {
     migrationsFolder: fileURLToPath(new URL("../drizzle", import.meta.url)),

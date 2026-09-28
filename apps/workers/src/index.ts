@@ -3,8 +3,8 @@
  * - enrichment: fetches remote ERC-8004 registration files into app.agent_profile
  * - liveness:   probes declared http(s) service endpoints into app.endpoint_status
  */
-import pg from "pg";
 import { pino, type Logger } from "pino";
+import { createPool } from "@moltforest/db";
 import { loadConfig, USER_AGENT } from "./config.js";
 import { fetchDocument, probeEndpoint } from "./net/fetchDocument.js";
 import { HostLimiter } from "./net/hostLimiter.js";
@@ -15,7 +15,7 @@ import { runLivenessBatch } from "./liveness/runner.js";
 
 const config = loadConfig();
 const logger = pino({ level: config.LOG_LEVEL });
-const db = new pg.Pool({ connectionString: config.DATABASE_URL, max: config.ENRICH_CONCURRENCY + config.LIVENESS_CONCURRENCY + 2 });
+const db = createPool(config.DATABASE_URL, { max: config.DB_POOL_MAX, ssl: config.DATABASE_SSL, sslCaFile: config.DATABASE_SSL_CA_FILE });
 const schemas = { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA };
 
 let stopping = false;

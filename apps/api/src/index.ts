@@ -9,7 +9,11 @@ import { createSyncRepository } from "./repositories/sync.js";
 
 const config = loadConfig();
 const logger = pino({ level: config.LOG_LEVEL });
-const db = createDb(config.DATABASE_URL);
+const db = createDb(config.DATABASE_URL, {
+  max: config.DB_POOL_MAX,
+  ssl: config.DATABASE_SSL,
+  sslCaFile: config.DATABASE_SSL_CA_FILE,
+});
 const chain = createChainChecker({
   ttlMs: config.CHAIN_CHECK_TTL_SECONDS * 1000,
   rpcUrls: { mainnet: config.MONAD_RPC_URL_MAINNET, testnet: config.MONAD_RPC_URL_TESTNET },

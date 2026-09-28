@@ -9,6 +9,9 @@ const schemaName = z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/, "must be a plain 
 
 const EnvSchema = z.object({
   DATABASE_URL: z.string().url(),
+  DATABASE_SSL: z.enum(["disable", "require", "verify-full"]).default("disable"),
+  DATABASE_SSL_CA_FILE: z.string().optional(),
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
   INDEXER_DB_SCHEMA: schemaName.default("envio"),
   APP_DB_SCHEMA: schemaName.default("app"),
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(4000),

@@ -1,4 +1,5 @@
 import pg from "pg";
+import { createPool, type PoolOptions } from "@moltforest/db";
 
 // Return NUMERIC (agent ids, block numbers) and INT8 as strings: they can exceed 2^53.
 pg.types.setTypeParser(pg.types.builtins.NUMERIC, (v) => v);
@@ -6,8 +7,8 @@ pg.types.setTypeParser(pg.types.builtins.INT8, (v) => v);
 
 export type Db = pg.Pool;
 
-export function createDb(connectionString: string): Db {
-  return new pg.Pool({ connectionString, max: 10, idleTimeoutMillis: 30_000, statement_timeout: 10_000 });
+export function createDb(connectionString: string, opts: PoolOptions = {}): Db {
+  return createPool(connectionString, { max: 10, statementTimeoutMs: 10_000, ...opts });
 }
 
 /** Quotes a validated schema name and table name, e.g. "envio"."Agent". */
