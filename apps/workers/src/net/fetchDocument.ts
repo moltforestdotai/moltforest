@@ -47,6 +47,40 @@ function describe(err: unknown): string {
   return (code ? `${code}: ` : "") + (cause instanceof Error ? cause.message : err.message).slice(0, 200);
 }
 
+export type ProbeOutcome =
+  | { kind: "response"; httpStatus: number; latencyMs: number }
+  | { kind: "blocked"; reason: string }
+  | { kind: "no_response"; reason: string; latencyMs: number };
+
+/**
+ * Liveness probe: one guarded GET, redirects not followed (a redirect is a
+ * response), body discarded, latency measured to the response headers.
+ */
+export async function probeEndpoint(
+  rawUrl: string,
+  opts: Pick<FetchOptions, "timeoutMs" | "userAgent" | "allowPrivateNetwork">,
+): Promise<ProbeOutcome> {
+  const allowPrivate = opts.allowPrivateNetwork === true;
+  const started = performance.now();
+  try {
+    const url = checkUrl(rawUrl, allowPrivate);
+    const res = await fetch(url, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(opts.timeoutMs),
+      dispatcher: dispatcherFor(allowPrivate),
+      headers: { "user-agent": opts.userAgent, accept: "*/*" },
+    });
+    const latencyMs = Math.round(performance.now() - started);
+    await res.body?.cancel();
+    return { kind: "response", httpStatus: res.status, latencyMs };
+  } catch (err) {
+    const blocked = err instanceof BlockedHostError ? err : (err as { cause?: unknown })?.cause;
+    if (blocked instanceof BlockedHostError) return { kind: "blocked", reason: blocked.message };
+    if (err instanceof TypeError && /Invalid URL/i.test(err.message)) return { kind: "blocked", reason: "invalid URL" };
+    return { kind: "no_response", reason: describe(err), latencyMs: Math.round(performance.now() - started) };
+  }
+}
+
 /**
  * GETs a small public document with SSRF protection, manual redirect handling
  * (each hop re-validated), an overall timeout, and a hard size cap.

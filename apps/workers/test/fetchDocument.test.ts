@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { fetchDocument, type FetchOptions } from "../src/net/fetchDocument.js";
+import { fetchDocument, probeEndpoint, type FetchOptions } from "../src/net/fetchDocument.js";
 
 let server: Server;
 let base: string;
@@ -35,6 +35,12 @@ beforeAll(async () => {
         return;
       case "/missing":
         res.writeHead(404).end("nope");
+        return;
+      case "/paywall":
+        res.writeHead(402, { "content-type": "application/json" }).end('{"x402Version":1}');
+        return;
+      case "/broken":
+        res.writeHead(503).end();
         return;
       default:
         res.writeHead(500).end();
@@ -81,6 +87,26 @@ describe("fetchDocument", () => {
     expect((await fetchDocument("file:///etc/passwd", opts)).kind).toBe("blocked");
     expect((await fetchDocument("http://user:pw@example.com/", opts)).kind).toBe("blocked");
     expect((await fetchDocument("not a url", opts)).kind).toBe("blocked");
+  });
+
+  describe("probeEndpoint", () => {
+    const probeOpts = { timeoutMs: 500, userAgent: "TestBot/1", allowPrivateNetwork: true };
+
+    it("reports the HTTP status and latency without following redirects", async () => {
+      expect(await probeEndpoint(`${base}/ok`, probeOpts)).toMatchObject({ kind: "response", httpStatus: 200, latencyMs: expect.any(Number) });
+      expect(await probeEndpoint(`${base}/redirect`, probeOpts)).toMatchObject({ kind: "response", httpStatus: 302 });
+      expect(await probeEndpoint(`${base}/paywall`, probeOpts)).toMatchObject({ kind: "response", httpStatus: 402 });
+      expect(await probeEndpoint(`${base}/broken`, probeOpts)).toMatchObject({ kind: "response", httpStatus: 503 });
+    });
+
+    it("reports no response on timeouts and refused connections", async () => {
+      expect(await probeEndpoint(`${base}/slow`, { ...probeOpts, timeoutMs: 100 })).toMatchObject({ kind: "no_response", reason: "timed out" });
+      expect((await probeEndpoint("http://127.0.0.1:1/", probeOpts)).kind).toBe("no_response");
+    });
+
+    it("blocks localhost endpoints in production mode", async () => {
+      expect(await probeEndpoint("http://localhost:3000/api", { timeoutMs: 500, userAgent: "TestBot/1" })).toMatchObject({ kind: "blocked" });
+    });
   });
 
   describe("with the SSRF guard on (production mode)", () => {

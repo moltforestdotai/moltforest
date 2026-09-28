@@ -3,7 +3,7 @@
  * owns schema "envio" and nothing here writes to it (decision D21).
  */
 import { sql } from "drizzle-orm";
-import { boolean, index, integer, jsonb, numeric, pgSchema, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, index, integer, jsonb, numeric, pgSchema, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 
 export const app = pgSchema("app");
 
@@ -51,6 +51,52 @@ export const agentProfile = app.table(
     lastChangedAt: timestamp("last_changed_at", { withTimezone: true }),
   },
   (t) => [primaryKey({ columns: [t.chainId, t.agentId] }), index("agent_profile_next_fetch_idx").on(t.nextFetchAt)],
+);
+
+/**
+ * Liveness result of a declared service endpoint.
+ * up: any HTTP response below 500 (401/402/404 still prove the server answers) ·
+ * error: HTTP 5xx · down: no response (DNS, connect, TLS, timeout) ·
+ * blocked: not a public http(s) endpoint (localhost, private IP, bad port…).
+ */
+export type EndpointStatus = "up" | "error" | "down" | "blocked";
+
+/**
+ * Latest liveness check per distinct http(s) endpoint URL, shared by every
+ * agent that declares it. Doubles as the liveness work queue (next_check_at).
+ */
+export const endpointStatus = app.table(
+  "endpoint_status",
+  {
+    url: text("url").primaryKey(),
+    host: text("host").notNull(),
+    status: text("status").$type<EndpointStatus>().notNull(),
+    httpStatus: integer("http_status"),
+    latencyMs: integer("latency_ms"),
+    /** The endpoint answered 402 Payment Required at least once (x402 paywall). */
+    paymentRequired: boolean("payment_required").notNull().default(false),
+    error: text("error"),
+    firstCheckedAt: timestamp("first_checked_at", { withTimezone: true }).notNull(),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }).notNull(),
+    lastUpAt: timestamp("last_up_at", { withTimezone: true }),
+    nextCheckAt: timestamp("next_check_at", { withTimezone: true }).notNull(),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+  },
+  (t) => [index("endpoint_status_next_check_idx").on(t.nextCheckAt)],
+);
+
+/** Daily roll-up of liveness checks (uptime % and latency without unbounded history). */
+export const endpointUptimeDaily = app.table(
+  "endpoint_uptime_daily",
+  {
+    url: text("url").notNull(),
+    day: date("day", { mode: "string" }).notNull(),
+    checks: integer("checks").notNull().default(0),
+    up: integer("up").notNull().default(0),
+    latencyMsSum: bigint("latency_ms_sum", { mode: "number" }).notNull().default(0),
+    latencyMsMax: integer("latency_ms_max").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.url, t.day] })],
 );
 
 /** Every distinct version of a registration file we have seen (provenance, churn). */

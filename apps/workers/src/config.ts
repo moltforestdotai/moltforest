@@ -25,6 +25,13 @@ const EnvSchema = z.object({
   ENRICH_IDLE_POLL_SECONDS: z.coerce.number().int().min(1).default(30),
   // dweb.link rejects path-style requests (403); w3s.link redirects to its subdomain gateway.
   IPFS_GATEWAYS: csv("https://ipfs.io/ipfs/,https://w3s.link/ipfs/,https://gateway.pinata.cloud/ipfs/"),
+  LIVENESS_ENABLED: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
+  LIVENESS_BATCH_SIZE: z.coerce.number().int().min(1).max(5_000).default(200),
+  LIVENESS_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(8),
+  LIVENESS_PER_HOST_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(2),
+  LIVENESS_PER_HOST_RPS: z.coerce.number().min(0.1).max(50).default(1),
+  LIVENESS_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(5_000),
+  LIVENESS_IDLE_POLL_SECONDS: z.coerce.number().int().min(1).default(30),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 

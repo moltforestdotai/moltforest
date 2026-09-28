@@ -8,6 +8,13 @@
       "when": 1790580980483,
       "tag": "0000_lovely_kingpin",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790582878399,
+      "tag": "0001_broken_spirit",
+      "breakpoints": true
     }
   ]
 }
