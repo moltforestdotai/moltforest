@@ -29,6 +29,10 @@ moltforest-web, agents (MCP later)
 | `packages/chain` | Network config, registry addresses, the reconciler's on-chain agent-count check (Multicall3). |
 | `packages/types` | Public API response types. `moltforest-web/src/lib/api-types.ts` mirrors this file. |
 
+## Deployment
+
+Production deploys from `main` through GitHub Actions to the VPS under pm2: see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 ## Prerequisites
 
 - Node.js 22+, pnpm 11 (`corepack enable`)
