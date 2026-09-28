@@ -8,7 +8,7 @@ type Agent {
   owner: String! @index           # lowercase address
   agentWallet: String             # set via setAgentWallet (MetadataSet key "agentWallet")
   agentUri: String!
-  uriKind: String!                # empty | data | ipfs | https | http | other
+  uriKind: String!                # empty | data | json | ipfs | https | http | other
   metadataStatus: String! @index  # ok | pending | invalid | empty | unsupported
   metadataError: String
   name: String

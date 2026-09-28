@@ -13,7 +13,7 @@
  */
 
 export type NetworkName = "mainnet" | "testnet";
-export type UriKind = "empty" | "data" | "ipfs" | "https" | "http" | "other";
+export type UriKind = "empty" | "data" | "json" | "ipfs" | "https" | "http" | "other";
 export type MetadataStatus = "ok" | "pending" | "invalid" | "empty" | "unsupported";
 export type AgentSort = "newest" | "oldest" | "most_reviewed";
 

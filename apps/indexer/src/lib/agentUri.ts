@@ -1,13 +1,13 @@
 /**
- * Classifies an ERC-8004 agentURI and, for inline `data:` URIs, decodes and
- * normalizes the registration file. Everything here is pure and synchronous so
+ * Classifies an ERC-8004 agentURI and, for inline `data:` URIs or raw JSON
+ * written straight into the URI, decodes and normalizes the registration file. Everything here is pure and synchronous so
  * it can run inside event handlers. Remote URIs (ipfs/https/http) are left as
  * `pending` for the enrichment worker.
  *
  * All input is untrusted: sizes are capped and unknown fields are dropped.
  */
 
-export type UriKind = "empty" | "data" | "ipfs" | "https" | "http" | "other";
+export type UriKind = "empty" | "data" | "json" | "ipfs" | "https" | "http" | "other";
 export type MetadataStatus = "ok" | "pending" | "invalid" | "empty" | "unsupported";
 
 export interface AgentService {
@@ -55,6 +55,7 @@ export function classifyUri(uri: string): UriKind {
   const u = uri.trim().toLowerCase();
   if (u === "") return "empty";
   if (u.startsWith("data:")) return "data";
+  if (u.startsWith("{")) return "json"; // registration JSON written directly as the URI (seen on mainnet)
   if (u.startsWith("ipfs://")) return "ipfs";
   if (u.startsWith("https://")) return "https";
   if (u.startsWith("http://")) return "http";
@@ -74,11 +75,13 @@ export function parseAgentUri(uri: string): ParsedAgentUri {
       return { uriKind, metadataStatus: "unsupported", ...EMPTY_FIELDS };
     case "data":
       return parseDataUri(uri.trim());
+    case "json":
+      return parseJsonText(uri.trim(), "json");
   }
 }
 
-function invalid(error: string): ParsedAgentUri {
-  return { uriKind: "data", metadataStatus: "invalid", ...EMPTY_FIELDS, metadataError: error };
+function invalid(error: string, uriKind: UriKind = "data"): ParsedAgentUri {
+  return { uriKind, metadataStatus: "invalid", ...EMPTY_FIELDS, metadataError: error };
 }
 
 function parseDataUri(uri: string): ParsedAgentUri {
@@ -96,15 +99,18 @@ function parseDataUri(uri: string): ParsedAgentUri {
   } catch {
     return invalid("undecodable data URI");
   }
-  if (Buffer.byteLength(text, "utf8") > LIMITS.dataUriBytes) return invalid("registration file too large");
+  return parseJsonText(text, "data");
+}
 
+function parseJsonText(text: string, uriKind: UriKind): ParsedAgentUri {
+  if (Buffer.byteLength(text, "utf8") > LIMITS.dataUriBytes) return invalid("registration file too large", uriKind);
   let json: unknown;
   try {
     json = JSON.parse(text);
   } catch {
-    return invalid("registration file is not valid JSON");
+    return invalid("registration file is not valid JSON", uriKind);
   }
-  return normalizeRegistration(json, "data");
+  return normalizeRegistration(json, uriKind);
 }
 
 /** Normalizes a parsed registration JSON (also reused for remote files later). */

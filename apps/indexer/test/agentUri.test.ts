@@ -13,6 +13,8 @@ describe("classifyUri", () => {
     ["https://agent.example/reg.json", "https"],
     ["HTTP://agent.example/reg.json", "http"],
     ["ftp://nope", "other"],
+    ['  {"name":"Raw"}', "json"],
+    ["x", "other"],
   ])("%j -> %s", (uri, kind) => {
     expect(classifyUri(uri)).toBe(kind);
   });
@@ -57,6 +59,16 @@ describe("parseAgentUri", () => {
     expect(parsed.x402Support).toBe(false);
   });
 
+  it("parses registration JSON written directly as the URI", () => {
+    // Real mainnet pattern, e.g. agentURI = '{"name":"EllaSharp","agentType":"reputation",...}'
+    const parsed = parseAgentUri(JSON.stringify({ name: "EllaSharp", agentType: "reputation", services: [{ name: "web", endpoint: "https://e.example" }] }));
+    expect(parsed).toMatchObject({ uriKind: "json", metadataStatus: "ok", name: "EllaSharp", services: [{ name: "web", endpoint: "https://e.example" }] });
+  });
+
+  it("marks truncated raw JSON as invalid, keeping the json kind", () => {
+    expect(parseAgentUri('{"name":"cut off')).toMatchObject({ uriKind: "json", metadataStatus: "invalid" });
+  });
+
   it("marks broken JSON as invalid with a reason", () => {
     const parsed = parseAgentUri("data:application/json;base64," + Buffer.from("{nope").toString("base64"));
     expect(parsed).toMatchObject({ metadataStatus: "invalid", metadataError: "registration file is not valid JSON" });
@@ -86,6 +98,7 @@ describe("parseAgentUri", () => {
     expect(parseAgentUri("ipfs://bafy").metadataStatus).toBe("pending");
     expect(parseAgentUri("https://a.example/r.json").metadataStatus).toBe("pending");
     expect(parseAgentUri("ftp://a").metadataStatus).toBe("unsupported");
+    expect(parseAgentUri("x").metadataStatus).toBe("unsupported");
     expect(parseAgentUri("").metadataStatus).toBe("empty");
   });
 });
