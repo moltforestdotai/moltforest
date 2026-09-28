@@ -29,6 +29,12 @@ contracts:
 chains:
   - id: 143
     start_block: 0
+    # HyperSync is primary; the public RPC takes over if realtime indexing stalls
+    # (seen live: HyperSync DNS/TLS hiccups froze progress for minutes).
+    rpc:
+      - url: ${ENVIO_RPC_URL_MAINNET:-https://rpc.monad.xyz}
+        for: fallback
+        interval_ceiling: 100
     contracts:
       - name: IdentityRegistry
         address: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
@@ -36,6 +42,10 @@ chains:
         address: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
   - id: 10143
     start_block: 0
+    rpc:
+      - url: ${ENVIO_RPC_URL_TESTNET:-https://testnet-rpc.monad.xyz}
+        for: fallback
+        interval_ceiling: 100
     contracts:
       - name: IdentityRegistry
         address: "0x8004A818BFB912233c491871b3d84c89A494BD9e"
