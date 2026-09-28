@@ -22,7 +22,7 @@ moltforest-web, agents (MCP later)
 | Path | What it is |
 |---|---|
 | `apps/indexer` | Envio indexer for the ERC-8004 registries on both chains. Runs only in Docker: Envio has no Windows build. Not part of the pnpm workspace. |
-| `apps/workers` | Enrichment worker: fetches registration files behind https/http/ipfs agentURIs (≈97% of agents) with SSRF protection, size/time limits and per-host rate limits. Writes `app.agent_profile`. |
+| `apps/workers` | Two loops. **Enrichment** fetches registration files behind https/http/ipfs agentURIs (≈97% of agents) into `app.agent_profile`. **Liveness** probes every declared http(s) service endpoint every ~15 min into `app.endpoint_status` and daily uptime roll-ups. Both use SSRF protection, time/size limits and per-host rate limits. |
 | `apps/api` | Express API. Reads the indexer's tables and the enrichment results; never writes the indexer's tables. |
 | `packages/registration` | Registration-file parser. The indexer gets a byte-identical copy (`pnpm sync:registration`; a test enforces it). |
 | `packages/db` | Drizzle schema and migrations for our own tables (schema `app`). |
@@ -61,13 +61,15 @@ ENVIO_CONFIG=config.smoke.yaml pnpm indexer:up
 
 The indexer's health endpoint is <http://localhost:9898/healthz>.
 
-### Run the enrichment worker
+### Run the workers (enrichment + liveness)
 
 ```bash
 pnpm dev:workers
 ```
 
-New agents and changed agentURIs are fetched first; valid profiles are re-checked every ~6 h; failures back off from 5 minutes up to 24 h. A transient failure (timeout, 5xx, 429) keeps the last good profile; a definitive one (404, invalid JSON, blocked host) clears it.
+Liveness: any HTTP answer below 500 counts as up (401/402/404 prove the server answers; 402 is recorded as an x402 paywall), 5xx as error, no answer as down, and localhost/private endpoints as not public (never probed).
+
+Enrichment: new agents and changed agentURIs are fetched first; valid profiles are re-checked every ~6 h; failures back off from 5 minutes up to 24 h. A transient failure (timeout, 5xx, 429) keeps the last good profile; a definitive one (404, invalid JSON, blocked host) clears it.
 
 ### Run the API
 
@@ -80,7 +82,9 @@ pnpm dev:api                # http://localhost:4000
 | `GET /health` | API and database health |
 | `GET /v1/networks` | Supported networks (mainnet is the default) |
 | `GET /v1/agents?network=&sort=newest\|oldest\|most_reviewed&q=&includeIncomplete=&limit=&cursor=` | Agent listing. Hides agents without a valid registration file and at least one service unless `includeIncomplete=true` |
-| `GET /v1/agents/:network/:agentId` | Agent detail with URI history and recent feedback |
+| `GET /v1/agents/:network/:agentId` | Agent detail: registration file and fetch status, per-endpoint liveness, URI history, recent feedback |
+| `GET /v1/activity?network=&limit=` | Recent on-chain activity (registrations, registration-file updates, reviews), newest first |
+| `GET /v1/activity/stream?network=` | Server-Sent Events: `activity` as blocks finish indexing, `status` as the indexer advances |
 | `GET /v1/sync-status?network=` | Indexer progress plus a reconciler check of the chain's highest agent id (`missingAgents` > 0 means the index is behind) |
 
 All endpoints are free for now and rate-limited per IP. Big integers are strings; there is no single trust score in any response.

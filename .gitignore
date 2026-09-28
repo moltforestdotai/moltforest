@@ -48,3 +48,6 @@ desktop.ini
 /.agents/
 /.claude/
 apps/indexer/.claude/
+
+# code-graph tool cache (graphs live in the workspace vault)
+graphify-out/
