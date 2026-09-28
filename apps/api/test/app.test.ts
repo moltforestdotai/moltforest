@@ -5,14 +5,19 @@
  * Envio schema is unavailable (run `pnpm db:up` and `pnpm indexer:up` first).
  */
 import { randomBytes } from "node:crypto";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import type { AgentDetail, AgentListResponse, SyncStatus } from "@moltforest/types";
+import type { ActivityListResponse, AgentDetail, AgentListResponse, SyncStatus } from "@moltforest/types";
 import { loadConfig } from "../src/config.js";
 import { createDb, type Db } from "../src/db.js";
 import { createApp } from "../src/app.js";
 import type { ChainChecker } from "../src/services/chainCheck.js";
+import { ActivityHub } from "../src/services/activityHub.js";
+import { createActivityRepository } from "../src/repositories/activity.js";
+import { createSyncRepository } from "../src/repositories/sync.js";
 
 const OWNER_A = "0x00000000000000000000000000000000000000aa";
 const OWNER_B = "0x00000000000000000000000000000000000000bb";
@@ -30,6 +35,7 @@ const fakeChain: ChainChecker = {
 
 let db: Db | undefined;
 let app: Express;
+let hub: ActivityHub;
 let skipReason: string | null = null;
 
 async function setup(): Promise<void> {
@@ -42,8 +48,10 @@ async function setup(): Promise<void> {
   }
   const pool = createDb(config.DATABASE_URL);
   try {
-    const exists = await pool.query(`SELECT to_regclass('envio."Agent"') AS t, to_regclass('app.agent_profile') AS p`);
-    if (!exists.rows[0]?.t || !exists.rows[0]?.p) {
+    const exists = await pool.query(
+      `SELECT to_regclass('envio."Agent"') AS t, to_regclass('app.agent_profile') AS p, to_regclass('app.endpoint_status') AS e`,
+    );
+    if (!exists.rows[0]?.t || !exists.rows[0]?.p || !exists.rows[0]?.e) {
       skipReason = "needs the indexer tables (start the indexer once) and `pnpm db:migrate`";
       await pool.end();
       return;
@@ -60,7 +68,9 @@ async function setup(): Promise<void> {
   for (const t of ["Agent", "AgentUriChange", "Feedback", "envio_chains"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE envio."${t}" INCLUDING DEFAULTS)`);
   }
-  await db.query(`CREATE TABLE ${s}."agent_profile" (LIKE app."agent_profile" INCLUDING ALL)`);
+  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily"]) {
+    await db.query(`CREATE TABLE ${s}."${t}" (LIKE app."${t}" INCLUDING ALL)`);
+  }
 
   const agent = (chainId: number, id: number, over: Record<string, unknown> = {}) => ({
     id: String(id),
@@ -173,7 +183,29 @@ async function setup(): Promise<void> {
      VALUES (143, 'evm', 0, 200, 5000, 5000, now(), 1234, true, 4990, now(), 1)`,
   );
 
+  // Liveness: both of Beta's endpoints are checked (one is an x402 paywall); agent 0's is not.
+  for (const [url, http, up, lat] of [
+    ["https://b.example", 200, 9, 450],
+    ["https://b.example/mcp", 402, 10, 1000],
+  ] as const) {
+    await db.query(
+      `INSERT INTO ${s}.endpoint_status (url, host, status, http_status, latency_ms, payment_required, first_checked_at, last_checked_at, last_up_at, next_check_at)
+       VALUES ($1, 'b.example', 'up', $2::int, 50, $3, now(), now(), now(), now() + interval '15 minutes')`,
+      [url, http, http === 402],
+    );
+    await db.query(
+      `INSERT INTO ${s}.endpoint_uptime_daily (url, day, checks, up, latency_ms_sum, latency_ms_max)
+       VALUES ($1, (now() AT TIME ZONE 'UTC')::date, 10, $2::int, $3::bigint, 120)`,
+      [url, up, lat],
+    );
+  }
+
+  hub = new ActivityHub(
+    { activity: createActivityRepository(db, { indexer: SCHEMA, app: SCHEMA }), sync: createSyncRepository(db, SCHEMA) },
+    { pollMs: 60_000, maxEventsPerTick: 50, maxSubscribers: 10 },
+  );
   app = createApp({
+    activityHub: hub,
     config: { INDEXER_DB_SCHEMA: SCHEMA, APP_DB_SCHEMA: SCHEMA, CORS_ORIGINS: ["http://localhost:3000"], RATE_LIMIT_PER_MINUTE: 10_000 },
     db,
     chain: fakeChain,
@@ -337,6 +369,67 @@ describe("API (integration)", () => {
 
       const test = (await request(app).get("/v1/sync-status?network=testnet")).body as SyncStatus;
       expect(test).toMatchObject({ indexed: false, indexer: null, chain: { error: "rpc down" }, missingAgents: null });
+    });
+
+    run("rolls endpoint liveness up per agent and details it per endpoint", async () => {
+      const list = (await request(app).get("/v1/agents")).body as AgentListResponse;
+      const beta = list.items.find((a) => a.agentId === "3")!;
+      expect(beta.liveness).toEqual({ endpoints: 2, checked: 2, up: 2, notPublic: 0, paymentRequired: 1, uptime7d: 0.95, checks7d: 20 });
+      const alpha = list.items.find((a) => a.agentId === "0")!;
+      expect(alpha.liveness).toMatchObject({ endpoints: 1, checked: 0, uptime7d: null });
+
+      const detail = (await request(app).get("/v1/agents/mainnet/3")).body as AgentDetail;
+      expect(detail.endpoints).toEqual([
+        expect.objectContaining({ url: "https://b.example", status: "up", httpStatus: 200, uptime7d: 0.9, checks7d: 10, avgLatencyMs7d: 50 }),
+        expect.objectContaining({ url: "https://b.example/mcp", status: "up", paymentRequired: true, uptime7d: 1, avgLatencyMs7d: 100 }),
+      ]);
+      const unchecked = (await request(app).get("/v1/agents/mainnet/0")).body as AgentDetail;
+      expect(unchecked.endpoints).toEqual([expect.objectContaining({ url: "https://a0.example", status: "unchecked" })]);
+    });
+
+    run("lists recent on-chain activity newest first", async () => {
+      const res = await request(app).get("/v1/activity?limit=4");
+      expect(res.status).toBe(200);
+      const body = res.body as ActivityListResponse;
+      expect(body.items.map((e) => [e.type, e.agentId, e.blockNumber])).toEqual([
+        ["feedback_given", "0", "1200"],
+        ["feedback_given", "0", "1100"],
+        ["profile_updated", "3", "1010"],
+        ["agent_registered", "8", "1008"],
+      ]);
+      expect(body.items[0]).toMatchObject({ agentName: "Alpha Reviewer", detail: "-2.5 · quality", actor: OWNER_B });
+      expect(body.items[2]).toMatchObject({ agentName: "Beta_Oracle 100%", detail: "https" });
+    });
+
+    run("streams newly indexed activity over SSE", async () => {
+      const server = app.listen(0);
+      const port = (server.address() as AddressInfo).port;
+      let received = "";
+      const req = http.get(`http://127.0.0.1:${port}/v1/activity/stream?network=mainnet`);
+      const response = await new Promise<http.IncomingMessage>((resolve) => req.on("response", resolve));
+      expect(response.headers["content-type"]).toContain("text/event-stream");
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => (received += chunk));
+
+      await hub.tick(); // first sighting sets the watermark (progress 4990); no replay
+      await db!.query(
+        `INSERT INTO "${SCHEMA}"."Feedback" (id, chain_id, agent_id, client, feedback_index, value, value_decimals, tag1, tag2, endpoint,
+           feedback_uri, feedback_hash, revoked, response_count, block_number, "timestamp", tx_hash)
+         VALUES ('4_new', 143, '4', $1, 1, 80, 0, 'speed', '', '', '', '0x', false, 0, 4995, now(), '0xfeed')`,
+        [OWNER_A],
+      );
+      await db!.query(`UPDATE "${SCHEMA}".envio_chains SET progress_block = 5000 WHERE id = 143`);
+      await hub.tick();
+      await new Promise((r) => setTimeout(r, 100));
+
+      req.destroy();
+      server.close();
+      expect(received).toContain("retry: 5000");
+      expect(received).toContain("event: status");
+      const activity = received.split("\n\n").find((block) => block.startsWith("event: activity"));
+      expect(activity).toBeDefined();
+      expect(JSON.parse(activity!.split("data: ")[1]!)).toMatchObject({ type: "feedback_given", agentId: "4", agentName: "Gamma", blockNumber: "4995", detail: "80 · speed" });
+      expect(received.match(/event: activity/g)).toHaveLength(1); // older history was not replayed
     });
 
     run("answers 503 while the indexer has not created its tables", async () => {

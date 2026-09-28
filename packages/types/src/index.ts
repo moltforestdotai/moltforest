@@ -48,6 +48,39 @@ export interface AgentReputationSummary {
   lastFeedbackAt: string | null;
 }
 
+/** Liveness roll-up over the agent's declared http(s) service endpoints. */
+export interface AgentLiveness {
+  /** http(s) endpoints declared in the registration file. */
+  endpoints: number;
+  /** Endpoints checked at least once. */
+  checked: number;
+  /** Endpoints answering at the last check (any HTTP status below 500). */
+  up: number;
+  /** Endpoints that cannot be reached from the internet (localhost, private IPs…). */
+  notPublic: number;
+  /** Endpoints that answered 402 Payment Required (x402 paywall). */
+  paymentRequired: number;
+  /** Share of successful checks over the last 7 days across checked endpoints; null without data. */
+  uptime7d: number | null;
+  checks7d: number;
+}
+
+export type EndpointLivenessStatus = "up" | "error" | "down" | "not_public" | "unchecked";
+
+export interface EndpointLiveness {
+  url: string;
+  status: EndpointLivenessStatus;
+  httpStatus: number | null;
+  latencyMs: number | null;
+  paymentRequired: boolean;
+  error: string | null;
+  lastCheckedAt: string | null;
+  lastUpAt: string | null;
+  uptime7d: number | null;
+  checks7d: number;
+  avgLatencyMs7d: number | null;
+}
+
 export interface AgentSummary {
   network: NetworkName;
   chainId: number;
@@ -70,6 +103,7 @@ export interface AgentSummary {
   registeredBlock: string;
   updatedAt: string;
   reputation: AgentReputationSummary;
+  liveness: AgentLiveness;
 }
 
 export interface AgentUriHistoryEntry {
@@ -123,6 +157,40 @@ export interface AgentDetail extends AgentSummary {
   } | null;
   uriHistory: AgentUriHistoryEntry[];
   recentFeedback: FeedbackEntry[];
+  /** Liveness of each declared http(s) endpoint. */
+  endpoints: EndpointLiveness[];
+}
+
+export type ActivityType = "agent_registered" | "profile_updated" | "feedback_given";
+
+/** One on-chain event, emitted only once the indexer has fully processed its block. */
+export interface ActivityEvent {
+  id: string;
+  network: NetworkName;
+  chainId: number;
+  type: ActivityType;
+  agentId: string;
+  agentName: string | null;
+  /** Owner (registration), updater (profile update) or reviewer (feedback). */
+  actor: string;
+  blockNumber: string;
+  timestamp: string;
+  txHash: string;
+  /** Feedback value/tag or new URI kind, when relevant. */
+  detail: string | null;
+}
+
+export interface ActivityListResponse {
+  network: NetworkName;
+  chainId: number;
+  items: ActivityEvent[];
+}
+
+/** SSE `status` event on /v1/activity/stream. */
+export interface ActivityStreamStatus {
+  network: NetworkName;
+  progressBlock: string;
+  chainHeadBlock: string;
 }
 
 export interface AgentListResponse {

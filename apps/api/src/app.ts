@@ -11,16 +11,21 @@ import { createSyncRepository } from "./repositories/sync.js";
 import type { ChainChecker } from "./services/chainCheck.js";
 import { agentsRouter } from "./routes/agents.js";
 import { metaRouter } from "./routes/meta.js";
+import { activityRouter } from "./routes/activity.js";
+import { createActivityRepository } from "./repositories/activity.js";
+import type { ActivityHub } from "./services/activityHub.js";
 import { errorHandler, notFound } from "./lib/errors.js";
 
 export interface AppDeps {
   config: Pick<AppConfig, "INDEXER_DB_SCHEMA" | "APP_DB_SCHEMA" | "CORS_ORIGINS" | "RATE_LIMIT_PER_MINUTE">;
   db: Db;
   chain: ChainChecker;
+  /** Live activity for SSE; omitted in tests that do not need streaming. */
+  activityHub?: ActivityHub;
   logger?: Logger;
 }
 
-export function createApp({ config, db, chain, logger }: AppDeps): Express {
+export function createApp({ config, db, chain, activityHub, logger }: AppDeps): Express {
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -44,6 +49,10 @@ export function createApp({ config, db, chain, logger }: AppDeps): Express {
   app.use(
     "/v1/agents",
     agentsRouter(createAgentRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA })),
+  );
+  app.use(
+    "/v1/activity",
+    activityRouter(createActivityRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA }), activityHub),
   );
 
   app.use(notFound);

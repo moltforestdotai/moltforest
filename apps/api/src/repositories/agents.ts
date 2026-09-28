@@ -11,6 +11,7 @@ import type {
   UriKind,
 } from "@moltforest/types";
 import { table, type Db } from "../db.js";
+import { createLivenessRepository } from "./liveness.js";
 import type { AgentCursor } from "../lib/cursor.js";
 
 export const URI_PREVIEW_LIMIT = 2_048;
@@ -162,7 +163,7 @@ function toServices(value: unknown): AgentService[] {
   );
 }
 
-function toSummary(network: NetworkName, row: AgentRow): AgentSummary {
+function toSummary(network: NetworkName, row: AgentRow): Omit<AgentSummary, "liveness"> {
   return {
     network,
     chainId: NETWORKS[network].chainId,
@@ -198,6 +199,7 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
   const agents = effectiveAgents(schemas.indexer, schemas.app);
   const uriChanges = table(schemas.indexer, "AgentUriChange");
   const feedback = table(schemas.indexer, "Feedback");
+  const liveness = createLivenessRepository(db, schemas.app);
 
   /** Filters shared by the page query and the `total` count (no cursor). */
   function baseFilters(p: ListAgentsParams): Where {
@@ -253,7 +255,11 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
       const pageRows = hasMore ? rows.rows.slice(0, p.limit) : rows.rows;
       const last = pageRows.at(-1);
       return {
-        items: pageRows.map((r) => toSummary(p.network, r)),
+        items: await (async () => {
+          const summaries = pageRows.map((r) => toSummary(p.network, r));
+          const live = await liveness.summaries(summaries.map((a) => a.services));
+          return summaries.map((a, i) => ({ ...a, liveness: live[i]! }));
+        })(),
         nextCursor:
           hasMore && last
             ? { sort: p.sort, agentId: last.agent_id, ...(p.sort === "most_reviewed" ? { feedbackCount: last.feedback_count } : {}) }
@@ -331,8 +337,11 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
         txHash: f.tx_hash,
       }));
 
+      const summary = toSummary(network, row);
+      const endpoints = await liveness.forServices(summary.services);
       return {
-        ...toSummary(network, row),
+        ...summary,
+        liveness: liveness.summarize(endpoints),
         agentUri: truncate(row.agent_uri),
         agentUriTruncated: row.agent_uri.length > URI_PREVIEW_LIMIT,
         metadataError: row.metadata_error,
@@ -354,6 +363,7 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
             : null,
         uriHistory,
         recentFeedback,
+        endpoints,
       };
     },
   };

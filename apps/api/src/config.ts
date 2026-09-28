@@ -20,6 +20,8 @@ const EnvSchema = z.object({
   MONAD_RPC_URL_TESTNET: z.string().url().optional(),
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(300),
   CHAIN_CHECK_TTL_SECONDS: z.coerce.number().int().min(5).default(60),
+  ACTIVITY_POLL_MS: z.coerce.number().int().min(250).max(60_000).default(2_000),
+  ACTIVITY_MAX_STREAMS: z.coerce.number().int().min(1).max(10_000).default(500),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 
