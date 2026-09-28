@@ -10,6 +10,7 @@ const schemaName = z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/, "must be a plain 
 const EnvSchema = z.object({
   DATABASE_URL: z.string().url(),
   INDEXER_DB_SCHEMA: schemaName.default("envio"),
+  APP_DB_SCHEMA: schemaName.default("app"),
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(4000),
   CORS_ORIGINS: z
     .string()

@@ -7,6 +7,7 @@ import type {
   AgentUriHistoryEntry,
   FeedbackEntry,
   MetadataStatus,
+  ProfileFetchStatus,
   UriKind,
 } from "@moltforest/types";
 import { table, type Db } from "../db.js";
@@ -83,6 +84,56 @@ interface AgentDetailRow extends AgentRow {
   metadata_error: string | null;
   registered_tx: string;
   uri_change_count: number;
+  remote: boolean;
+  profile_status: string | null;
+  profile_http_status: number | null;
+  profile_error: string | null;
+  profile_fetch_url: string | null;
+  profile_fetched_at: Date | null;
+  profile_last_ok_at: Date | null;
+  profile_next_fetch_at: Date | null;
+  profile_change_count: number | null;
+}
+
+const REMOTE = `a.uri_kind IN ('https', 'http', 'ipfs')`;
+/** The fetched profile belongs to the agent's current URI and was valid at last check. */
+const PROFILE_OK = `(p.agent_id IS NOT NULL AND p.uri = a.agent_uri AND p.last_ok_at IS NOT NULL)`;
+const pick = (column: string, fallback: string) =>
+  `CASE WHEN NOT (${REMOTE}) THEN a.${column} WHEN ${PROFILE_OK} THEN p.${column} ELSE ${fallback} END AS ${column}`;
+
+/**
+ * One row per agent with the *effective* registration fields: inline URIs
+ * (data:, raw JSON) come from the indexer, remote URIs (https/http/ipfs) from
+ * the enrichment worker's app.agent_profile. Output column names match the
+ * indexer's, so filters and ordering work on either.
+ */
+function effectiveAgents(indexerSchema: string, appSchema: string): string {
+  return `(
+    SELECT a.chain_id, a.id, a.agent_id, a.owner, a.agent_wallet, a.agent_uri, a.uri_kind,
+           a.registered_at, a.registered_block, a.registered_tx, a.updated_at, a.uri_change_count,
+           a.feedback_count, a.revoked_feedback_count, a.unique_reviewer_count, a.last_feedback_at,
+           ${REMOTE} AS remote,
+           CASE WHEN NOT (${REMOTE}) THEN a.metadata_status
+                WHEN p.agent_id IS NULL OR p.uri <> a.agent_uri THEN 'pending'
+                WHEN p.last_ok_at IS NOT NULL THEN 'ok'
+                WHEN p.status IN ('invalid', 'too_large') THEN 'invalid'
+                ELSE 'unreachable' END AS metadata_status,
+           CASE WHEN NOT (${REMOTE}) THEN a.metadata_error
+                WHEN p.uri = a.agent_uri AND p.last_ok_at IS NULL THEN p.error END AS metadata_error,
+           ${pick("name", "NULL")}, ${pick("description", "NULL")}, ${pick("image", "NULL")},
+           ${pick("services", "'[]'::jsonb")}, ${pick("service_count", "0")},
+           ${pick("x402_support", "NULL")}, ${pick("active", "NULL")}, ${pick("supported_trust", "'{}'::text[]")},
+           CASE WHEN p.uri = a.agent_uri THEN p.status END AS profile_status,
+           CASE WHEN p.uri = a.agent_uri THEN p.http_status END AS profile_http_status,
+           CASE WHEN p.uri = a.agent_uri THEN p.error END AS profile_error,
+           CASE WHEN p.uri = a.agent_uri THEN p.fetch_url END AS profile_fetch_url,
+           CASE WHEN p.uri = a.agent_uri THEN p.fetched_at END AS profile_fetched_at,
+           CASE WHEN p.uri = a.agent_uri THEN p.last_ok_at END AS profile_last_ok_at,
+           CASE WHEN p.uri = a.agent_uri THEN p.next_fetch_at END AS profile_next_fetch_at,
+           p.change_count AS profile_change_count
+      FROM ${table(indexerSchema, "Agent")} a
+      LEFT JOIN ${table(appSchema, "agent_profile")} p ON p.chain_id = a.chain_id AND p.agent_id = a.agent_id
+  ) AS agents`;
 }
 
 /** Builds a parameterized WHERE clause without string-concatenating values. */
@@ -143,10 +194,10 @@ function toSummary(network: NetworkName, row: AgentRow): AgentSummary {
 
 const truncate = (s: string) => (s.length > URI_PREVIEW_LIMIT ? s.slice(0, URI_PREVIEW_LIMIT) : s);
 
-export function createAgentRepository(db: Db, schema: string) {
-  const agents = table(schema, "Agent");
-  const uriChanges = table(schema, "AgentUriChange");
-  const feedback = table(schema, "Feedback");
+export function createAgentRepository(db: Db, schemas: { indexer: string; app: string }) {
+  const agents = effectiveAgents(schemas.indexer, schemas.app);
+  const uriChanges = table(schemas.indexer, "AgentUriChange");
+  const feedback = table(schemas.indexer, "Feedback");
 
   /** Filters shared by the page query and the `total` count (no cursor). */
   function baseFilters(p: ListAgentsParams): Where {
@@ -215,7 +266,9 @@ export function createAgentRepository(db: Db, schema: string) {
     async get(network: NetworkName, agentId: string): Promise<AgentDetail | null> {
       const chainId = NETWORKS[network].chainId;
       const result = await db.query<AgentDetailRow>(
-        `SELECT ${SUMMARY_COLUMNS}, agent_uri, metadata_error, registered_tx, uri_change_count
+        `SELECT ${SUMMARY_COLUMNS}, agent_uri, metadata_error, registered_tx, uri_change_count, remote,
+                profile_status, profile_http_status, profile_error, profile_fetch_url, profile_fetched_at,
+                profile_last_ok_at, profile_next_fetch_at, profile_change_count
            FROM ${agents} WHERE chain_id = $1 AND id = $2`,
         [chainId, agentId],
       );
@@ -285,6 +338,20 @@ export function createAgentRepository(db: Db, schema: string) {
         metadataError: row.metadata_error,
         registeredTx: row.registered_tx,
         uriChangeCount: row.uri_change_count,
+        profileSource: row.remote ? "remote" : "onchain",
+        profileFetch:
+          row.remote && row.profile_fetched_at
+            ? {
+                status: row.profile_status as ProfileFetchStatus,
+                httpStatus: row.profile_http_status,
+                error: row.profile_error,
+                fetchUrl: row.profile_fetch_url,
+                fetchedAt: row.profile_fetched_at.toISOString(),
+                lastOkAt: row.profile_last_ok_at?.toISOString() ?? null,
+                nextFetchAt: row.profile_next_fetch_at?.toISOString() ?? null,
+                contentChangeCount: row.profile_change_count ?? 0,
+              }
+            : null,
         uriHistory,
         recentFeedback,
       };

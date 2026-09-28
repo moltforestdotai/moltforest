@@ -14,7 +14,7 @@ import { metaRouter } from "./routes/meta.js";
 import { errorHandler, notFound } from "./lib/errors.js";
 
 export interface AppDeps {
-  config: Pick<AppConfig, "INDEXER_DB_SCHEMA" | "CORS_ORIGINS" | "RATE_LIMIT_PER_MINUTE">;
+  config: Pick<AppConfig, "INDEXER_DB_SCHEMA" | "APP_DB_SCHEMA" | "CORS_ORIGINS" | "RATE_LIMIT_PER_MINUTE">;
   db: Db;
   chain: ChainChecker;
   logger?: Logger;
@@ -41,7 +41,10 @@ export function createApp({ config, db, chain, logger }: AppDeps): Express {
 
   // Decision D15: every endpoint is free for now (x402 paywall arrives behind a flag).
   app.use(metaRouter(db, createSyncRepository(db, config.INDEXER_DB_SCHEMA), chain));
-  app.use("/v1/agents", agentsRouter(createAgentRepository(db, config.INDEXER_DB_SCHEMA)));
+  app.use(
+    "/v1/agents",
+    agentsRouter(createAgentRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA })),
+  );
 
   app.use(notFound);
   app.use(errorHandler);

@@ -14,7 +14,14 @@
 
 export type NetworkName = "mainnet" | "testnet";
 export type UriKind = "empty" | "data" | "json" | "ipfs" | "https" | "http" | "other";
-export type MetadataStatus = "ok" | "pending" | "invalid" | "empty" | "unsupported";
+/**
+ * ok: a valid registration file is known · pending: remote file not fetched yet ·
+ * invalid: file is not a valid registration · unreachable: remote file could not
+ * be fetched · empty: no agentURI · unsupported: unknown URI scheme.
+ */
+export type MetadataStatus = "ok" | "pending" | "invalid" | "unreachable" | "empty" | "unsupported";
+/** Outcome of the last fetch of a remote registration file. */
+export type ProfileFetchStatus = "ok" | "invalid" | "too_large" | "unreachable" | "blocked";
 export type AgentSort = "newest" | "oldest" | "most_reviewed";
 
 export interface NetworkInfo {
@@ -99,6 +106,21 @@ export interface AgentDetail extends AgentSummary {
   metadataError: string | null;
   registeredTx: string;
   uriChangeCount: number;
+  /** Where the registration fields came from: the agentURI itself, or a fetched remote file. */
+  profileSource: "onchain" | "remote";
+  /** Last fetch of the remote registration file (null for on-chain profiles or not yet fetched). */
+  profileFetch: {
+    status: ProfileFetchStatus;
+    httpStatus: number | null;
+    error: string | null;
+    fetchUrl: string | null;
+    fetchedAt: string;
+    /** When the profile fields were last confirmed valid; they may be kept through transient outages. */
+    lastOkAt: string | null;
+    nextFetchAt: string | null;
+    /** Times the file's content changed after the first successful fetch. */
+    contentChangeCount: number;
+  } | null;
   uriHistory: AgentUriHistoryEntry[];
   recentFeedback: FeedbackEntry[];
 }

@@ -32,7 +32,11 @@ export const AgentParams = z.object({
 });
 
 const indexNotReady = () =>
-  new HttpError(503, "index_not_ready", "The indexer has not created its tables yet. Start it with `pnpm indexer:up`.");
+  new HttpError(
+    503,
+    "index_not_ready",
+    "Database tables are missing. Start the indexer (`pnpm indexer:up`) and apply migrations (`pnpm db:migrate`).",
+  );
 
 export function agentsRouter(repo: AgentRepository): Router {
   const router = Router();

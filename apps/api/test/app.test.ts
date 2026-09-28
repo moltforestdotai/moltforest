@@ -17,11 +17,14 @@ import type { ChainChecker } from "../src/services/chainCheck.js";
 const OWNER_A = "0x00000000000000000000000000000000000000aa";
 const OWNER_B = "0x00000000000000000000000000000000000000bb";
 const SCHEMA = `api_test_${randomBytes(4).toString("hex")}`;
+const BETA_URI = "https://b.example/" + "x".repeat(3000);
+/** How the indexer stores an agent with a remote agentURI before enrichment. */
+const REMOTE = { uri_kind: "https", metadata_status: "pending", name: null, services: "[]", service_count: 0 };
 
 const fakeChain: ChainChecker = {
   highestAgentId: async (network) =>
     network === "mainnet"
-      ? { highestAgentId: "6", checkedAt: new Date("2026-09-26T00:00:00Z"), error: null }
+      ? { highestAgentId: "10", checkedAt: new Date("2026-09-26T00:00:00Z"), error: null }
       : { highestAgentId: null, checkedAt: null, error: "rpc down" },
 };
 
@@ -39,9 +42,9 @@ async function setup(): Promise<void> {
   }
   const pool = createDb(config.DATABASE_URL);
   try {
-    const exists = await pool.query(`SELECT to_regclass('envio."Agent"') AS t`);
-    if (!exists.rows[0]?.t) {
-      skipReason = "envio schema not found (start the indexer once)";
+    const exists = await pool.query(`SELECT to_regclass('envio."Agent"') AS t, to_regclass('app.agent_profile') AS p`);
+    if (!exists.rows[0]?.t || !exists.rows[0]?.p) {
+      skipReason = "needs the indexer tables (start the indexer once) and `pnpm db:migrate`";
       await pool.end();
       return;
     }
@@ -57,6 +60,7 @@ async function setup(): Promise<void> {
   for (const t of ["Agent", "AgentUriChange", "Feedback", "envio_chains"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE envio."${t}" INCLUDING DEFAULTS)`);
   }
+  await db.query(`CREATE TABLE ${s}."agent_profile" (LIKE app."agent_profile" INCLUDING ALL)`);
 
   const agent = (chainId: number, id: number, over: Record<string, unknown> = {}) => ({
     id: String(id),
@@ -93,17 +97,13 @@ async function setup(): Promise<void> {
     agent(143, 0, { name: "Alpha Reviewer", feedback_count: 5, unique_reviewer_count: 3 }),
     agent(143, 1, { services: "[]", service_count: 0 }),
     agent(143, 2, { metadata_status: "empty", uri_kind: "empty", agent_uri: "", name: null, services: "[]", service_count: 0 }),
-    agent(143, 3, {
-      name: "Beta_Oracle 100%",
-      owner: OWNER_B,
-      feedback_count: 5,
-      services: JSON.stringify([{ name: "A2A", endpoint: "https://b.example" }, { name: "MCP", endpoint: "https://b.example/mcp" }]),
-      service_count: 2,
-      agent_uri: "https://b.example/" + "x".repeat(3000),
-      uri_kind: "https",
-      uri_change_count: 1,
-    }),
+    // Remote agents: the indexer only knows the URI; fields come from app.agent_profile.
+    agent(143, 3, { ...REMOTE, owner: OWNER_B, feedback_count: 5, agent_uri: BETA_URI, uri_change_count: 1 }),
     agent(143, 4, { name: "Gamma", feedback_count: 9 }),
+    agent(143, 5, { ...REMOTE, agent_uri: "https://e.example/5.json" }), // never fetched → pending
+    agent(143, 6, { ...REMOTE, agent_uri: "https://e.example/6-new.json" }), // profile is for an old URI → pending
+    agent(143, 7, { ...REMOTE, agent_uri: "https://e.example/7.json" }), // fetch failed definitively → unreachable
+    agent(143, 8, { ...REMOTE, agent_uri: "ipfs://bafy8", uri_kind: "ipfs" }), // transient outage keeps last good profile
     agent(10143, 0, { name: "Testnet Alpha" }),
   ];
   for (const r of rows) {
@@ -113,6 +113,43 @@ async function setup(): Promise<void> {
       Object.values(r),
     );
   }
+
+  const profile = async (id: number, uri: string, over: Record<string, unknown>) => {
+    const r = {
+      chain_id: 143,
+      agent_id: id,
+      uri,
+      uri_kind: uri.startsWith("ipfs") ? "ipfs" : "https",
+      status: "ok",
+      fetched_at: new Date("2026-09-28T00:00:00Z"),
+      next_fetch_at: new Date("2026-09-28T06:00:00Z"),
+      ...over,
+    };
+    const cols = Object.keys(r);
+    await db!.query(
+      `INSERT INTO ${s}."agent_profile" (${cols.join(", ")}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(", ")})`,
+      Object.values(r),
+    );
+  };
+  const okAt = new Date("2026-09-28T00:00:00Z");
+  await profile(3, BETA_URI, {
+    name: "Beta_Oracle 100%",
+    services: JSON.stringify([{ name: "A2A", endpoint: "https://b.example" }, { name: "MCP", endpoint: "https://b.example/mcp" }]),
+    service_count: 2,
+    last_ok_at: okAt,
+  });
+  await profile(6, "https://e.example/6-old.json", { name: "Stale", services: JSON.stringify([{ name: "x", endpoint: "https://x" }]), service_count: 1, last_ok_at: okAt });
+  await profile(7, "https://e.example/7.json", { status: "unreachable", http_status: 404, error: "HTTP 404" });
+  await profile(8, "ipfs://bafy8", {
+    status: "unreachable",
+    http_status: 503,
+    error: "HTTP 503",
+    name: "Ipfs Eight",
+    services: JSON.stringify([{ name: "MCP", endpoint: "https://i.example/mcp" }]),
+    service_count: 1,
+    last_ok_at: okAt,
+    change_count: 2,
+  });
 
   await db.query(
     `INSERT INTO ${s}."AgentUriChange" (id, chain_id, agent_id, uri, uri_kind, updated_by, block_number, "timestamp", tx_hash)
@@ -137,7 +174,7 @@ async function setup(): Promise<void> {
   );
 
   app = createApp({
-    config: { INDEXER_DB_SCHEMA: SCHEMA, CORS_ORIGINS: ["http://localhost:3000"], RATE_LIMIT_PER_MINUTE: 10_000 },
+    config: { INDEXER_DB_SCHEMA: SCHEMA, APP_DB_SCHEMA: SCHEMA, CORS_ORIGINS: ["http://localhost:3000"], RATE_LIMIT_PER_MINUTE: 10_000 },
     db,
     chain: fakeChain,
   });
@@ -179,10 +216,12 @@ describe("API (integration)", () => {
       const res = await request(app).get("/v1/agents");
       expect(res.status).toBe(200);
       const body = res.body as AgentListResponse;
-      expect(body).toMatchObject({ network: "mainnet", chainId: 143, sort: "newest", includeIncomplete: false, total: 3, totalIndexed: 5 });
-      expect(ids(body)).toEqual(["4", "3", "0"]);
-      expect(body.items[1]).toMatchObject({
+      expect(body).toMatchObject({ network: "mainnet", chainId: 143, sort: "newest", includeIncomplete: false, total: 4, totalIndexed: 9 });
+      // 8: remote profile kept through an outage · 4: inline · 3: fetched remote profile · 0: inline
+      expect(ids(body)).toEqual(["8", "4", "3", "0"]);
+      expect(body.items[2]).toMatchObject({
         name: "Beta_Oracle 100%",
+        metadataStatus: "ok",
         serviceCount: 2,
         globalId: "eip155:143:0x8004a169fb4a3325136eb29fa0ceb6d2e539a432:3",
         reputation: { feedbackCount: 5 },
@@ -190,10 +229,14 @@ describe("API (integration)", () => {
       expect(body.items[0]).not.toHaveProperty("trustScore");
     });
 
-    run("includeIncomplete shows every indexed agent", async () => {
+    run("includeIncomplete shows every indexed agent with its effective status", async () => {
       const res = await request(app).get("/v1/agents?includeIncomplete=true&sort=oldest");
-      expect(ids(res.body)).toEqual(["0", "1", "2", "3", "4"]);
-      expect(res.body.total).toBe(5);
+      const body = res.body as AgentListResponse;
+      expect(ids(body)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7", "8"]);
+      expect(body.total).toBe(9);
+      const status = Object.fromEntries(body.items.map((a) => [a.agentId, a.metadataStatus]));
+      expect(status).toMatchObject({ "2": "empty", "3": "ok", "5": "pending", "6": "pending", "7": "unreachable", "8": "ok" });
+      expect(body.items.find((a) => a.agentId === "6")).toMatchObject({ name: null, serviceCount: 0 }); // stale profile not shown
     });
 
     run("keeps networks apart", async () => {
@@ -203,10 +246,10 @@ describe("API (integration)", () => {
     });
 
     run("paginates with a keyset cursor", async () => {
-      const first = await request(app).get("/v1/agents?limit=2");
-      expect(ids(first.body)).toEqual(["4", "3"]);
+      const first = await request(app).get("/v1/agents?limit=3");
+      expect(ids(first.body)).toEqual(["8", "4", "3"]);
       expect(first.body.nextCursor).toEqual(expect.any(String));
-      const second = await request(app).get(`/v1/agents?limit=2&cursor=${first.body.nextCursor}`);
+      const second = await request(app).get(`/v1/agents?limit=3&cursor=${first.body.nextCursor}`);
       expect(ids(second.body)).toEqual(["0"]);
       expect(second.body.nextCursor).toBeNull();
     });
@@ -219,7 +262,7 @@ describe("API (integration)", () => {
         seen.push(...ids(res.body));
         cursor = res.body.nextCursor;
       } while (cursor);
-      expect(seen).toEqual(["4", "3", "0"]);
+      expect(seen).toEqual(["4", "3", "0", "8"]);
     });
 
     run("searches by name with LIKE wildcards escaped, by id and by owner", async () => {
@@ -248,9 +291,23 @@ describe("API (integration)", () => {
       const res = await request(app).get("/v1/agents/mainnet/3");
       expect(res.status).toBe(200);
       const body = res.body as AgentDetail;
-      expect(body).toMatchObject({ agentId: "3", uriKind: "https", uriChangeCount: 1, agentUriTruncated: true });
+      expect(body).toMatchObject({
+        agentId: "3",
+        uriKind: "https",
+        uriChangeCount: 1,
+        agentUriTruncated: true,
+        profileSource: "remote",
+        profileFetch: { status: "ok", contentChangeCount: 0, lastOkAt: "2026-09-28T00:00:00.000Z" },
+      });
       expect(body.agentUri).toHaveLength(2048);
       expect(body.uriHistory).toHaveLength(1);
+
+      const detail = async (id: number) => (await request(app).get(`/v1/agents/mainnet/${id}`)).body as AgentDetail;
+      expect(await detail(5)).toMatchObject({ metadataStatus: "pending", profileFetch: null });
+      expect(await detail(6)).toMatchObject({ metadataStatus: "pending", name: null, profileFetch: null });
+      expect(await detail(7)).toMatchObject({ metadataStatus: "unreachable", metadataError: "HTTP 404", profileFetch: { status: "unreachable", httpStatus: 404, lastOkAt: null } });
+      expect(await detail(8)).toMatchObject({ metadataStatus: "ok", name: "Ipfs Eight", profileFetch: { status: "unreachable", httpStatus: 503, contentChangeCount: 2 } });
+      expect(await detail(4)).toMatchObject({ profileSource: "onchain", profileFetch: null });
 
       const withFeedback = (await request(app).get("/v1/agents/mainnet/000")).body as AgentDetail;
       expect(withFeedback.agentId).toBe("0");
@@ -273,8 +330,8 @@ describe("API (integration)", () => {
         network: "mainnet",
         indexed: true,
         indexer: { ready: true, usingHyperSync: true, lagBlocks: "10", eventsProcessed: "1234" },
-        agents: { indexedCount: 5, highestIndexedAgentId: "4" },
-        chain: { highestAgentId: "6", error: null },
+        agents: { indexedCount: 9, highestIndexedAgentId: "8" },
+        chain: { highestAgentId: "10", error: null },
         missingAgents: "2",
       });
 
@@ -284,7 +341,7 @@ describe("API (integration)", () => {
 
     run("answers 503 while the indexer has not created its tables", async () => {
       const cold = createApp({
-        config: { INDEXER_DB_SCHEMA: "schema_that_does_not_exist", CORS_ORIGINS: [], RATE_LIMIT_PER_MINUTE: 10_000 },
+        config: { INDEXER_DB_SCHEMA: "schema_that_does_not_exist", APP_DB_SCHEMA: "app", CORS_ORIGINS: [], RATE_LIMIT_PER_MINUTE: 10_000 },
         db: db!,
         chain: fakeChain,
       });
