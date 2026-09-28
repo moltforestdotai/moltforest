@@ -19,7 +19,11 @@ let db: pg.Pool | undefined;
 let skipReason: string | null = null;
 
 const docs = new Map<string, FetchOutcome>();
-const fetcher: Fetcher = async (url) => docs.get(url) ?? { kind: "http_error", httpStatus: 404, finalUrl: url };
+const calls = new Map<string, number>();
+const fetcher: Fetcher = async (url) => {
+  calls.set(url, (calls.get(url) ?? 0) + 1);
+  return docs.get(url) ?? { kind: "http_error", httpStatus: 404, finalUrl: url };
+};
 const okDoc = (url: string, name: string, services = 1): FetchOutcome => ({
   kind: "ok",
   httpStatus: 200,
@@ -119,6 +123,17 @@ describe("enrichment runner (integration)", () => {
     const stats = await runBatch(deps(), opts);
     expect(stats.selected).toBe(1);
     expect(await profile(143, 1)).toMatchObject({ uri: "https://h.example/1b.json", name: "One B", change_count: 1 });
+  });
+
+  run("fetches a URL shared by many agents only once per batch", async () => {
+    const shared = "https://h.example/shared.json";
+    for (const id of [20, 21, 22, 23, 24]) await addAgent(143, id, shared, "https");
+    docs.set(shared, okDoc(shared, "Shared"));
+    calls.delete(shared);
+    const stats = await runBatch(deps(), opts);
+    expect(stats).toMatchObject({ selected: 5, requests: 1, ok: 5 });
+    expect(calls.get(shared)).toBe(1);
+    expect(await profile(143, 24)).toMatchObject({ status: "ok", name: "Shared" });
   });
 
   run("keeps the last good profile through a transient outage", async () => {

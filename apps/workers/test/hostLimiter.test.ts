@@ -37,6 +37,18 @@ describe("HostLimiter", () => {
     expect(Math.max(...starts.a!, ...starts.b!)).toBeLessThan(200);
   });
 
+  it("pauses a host (e.g. after HTTP 429) without affecting others", async () => {
+    const limiter = new HostLimiter(4, 0);
+    limiter.pause("slow", 80);
+    const t0 = Date.now();
+    const [slow, fast] = await Promise.all([
+      limiter.run("slow", async () => Date.now() - t0),
+      limiter.run("fast", async () => Date.now() - t0),
+    ]);
+    expect(slow).toBeGreaterThanOrEqual(70);
+    expect(fast).toBeLessThan(40);
+  });
+
   it("releases the slot when the task throws", async () => {
     const limiter = new HostLimiter(1, 0);
     await expect(limiter.run("h", async () => Promise.reject(new Error("boom")))).rejects.toThrow("boom");

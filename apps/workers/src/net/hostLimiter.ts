@@ -19,6 +19,12 @@ export class HostLimiter {
     private readonly minIntervalMs: number,
   ) {}
 
+  /** Delays the next request start to this host (e.g. after HTTP 429). */
+  pause(host: string, ms: number): void {
+    const s = this.state(host);
+    s.nextStart = Math.max(s.nextStart, Date.now() + ms);
+  }
+
   async run<T>(host: string, fn: () => Promise<T>): Promise<T> {
     await this.acquire(host);
     try {
@@ -59,6 +65,6 @@ export class HostLimiter {
     const s = this.state(host);
     s.active--;
     s.waiters.shift()?.();
-    if (s.active === 0 && s.waiters.length === 0 && s.nextStart < Date.now()) this.hosts.delete(host);
+    if (s.active === 0 && s.waiters.length === 0 && s.nextStart <= Date.now()) this.hosts.delete(host);
   }
 }
