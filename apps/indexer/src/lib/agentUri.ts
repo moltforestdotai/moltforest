@@ -1,8 +1,16 @@
 /**
- * Classifies an ERC-8004 agentURI and, for inline `data:` URIs or raw JSON
- * written straight into the URI, decodes and normalizes the registration file. Everything here is pure and synchronous so
- * it can run inside event handlers. Remote URIs (ipfs/https/http) are left as
- * `pending` for the enrichment worker.
+ * ERC-8004 registration-file parsing, shared by the indexer and the enrichment
+ * worker.
+ *
+ * SOURCE OF TRUTH: packages/registration/src/index.ts. apps/indexer runs in
+ * Docker outside the pnpm workspace, so it gets a byte-identical copy at
+ * apps/indexer/src/lib/agentUri.ts. After editing, run `pnpm sync:registration`;
+ * a test fails if the copy drifts.
+ *
+ * Classifies an agentURI and, for inline `data:` URIs or raw JSON written
+ * straight into the URI, decodes and normalizes the registration file.
+ * Everything here is pure and synchronous. Remote URIs (ipfs/https/http) are
+ * `pending` until the enrichment worker fetches them.
  *
  * All input is untrusted: sizes are capped and unknown fields are dropped.
  */

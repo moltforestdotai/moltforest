@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyUri, decodeWalletMetadata, LIMITS, parseAgentUri } from "../src/lib/agentUri.js";
+import { classifyUri, decodeWalletMetadata, LIMITS, parseAgentUri } from "../src/index.js";
 
 const toDataUri = (obj: unknown) =>
   `data:application/json;base64,${Buffer.from(JSON.stringify(obj)).toString("base64")}`;
