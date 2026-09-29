@@ -14,8 +14,8 @@ jobs:
     name: Type-check and test (workspace)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: corepack enable
@@ -31,8 +31,8 @@ jobs:
       run:
         working-directory: apps/indexer
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: corepack enable
@@ -59,6 +59,12 @@ jobs:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
+          for name in VPS_HOST VPS_USER VPS_SSH_KEY VPS_KNOWN_HOSTS; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Repository secret $name is not set (Settings -> Secrets and variables -> Actions)"
+              exit 1
+            fi
+          done
           install -m 700 -d ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
