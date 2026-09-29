@@ -65,8 +65,13 @@ jobs:
               exit 1
             fi
           done
+          # Values pasted on Windows can carry CR characters, which break SSH parsing.
+          host="$(printf '%s' "$VPS_HOST" | tr -d '\r' | xargs)"
+          user="$(printf '%s' "$VPS_USER" | tr -d '\r' | xargs)"
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o IdentitiesOnly=yes "$VPS_USER@$VPS_HOST" "deploy $GITHUB_SHA"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > ~/.ssh/known_hosts
+          # Public fingerprint(s) we trust; must match docs/DEPLOYMENT.md.
+          ssh-keygen -l -f ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o IdentitiesOnly=yes "$user@$host" "deploy $GITHUB_SHA"
