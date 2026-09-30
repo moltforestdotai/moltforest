@@ -69,20 +69,17 @@ jobs:
       group: production-deploy
       cancel-in-progress: false
     steps:
-      # The key's authorized_keys entry forces scripts/deploy/remote-deploy.sh,
-      # so this connection can only deploy a commit that is on main.
-      # Only the known_hosts file is needed from the repo.
-      - uses: actions/checkout@v7
-        with:
-          sparse-checkout: scripts/deploy/known_hosts
-          sparse-checkout-cone-mode: false
+      # Server details live in repository secrets, never in the repo. On the
+      # server this key is restricted to a deploy command that accepts only
+      # "deploy <sha>" for a commit on main.
       - name: Deploy ${{ github.sha }}
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
-          for name in VPS_HOST VPS_USER VPS_SSH_KEY; do
+          for name in VPS_HOST VPS_USER VPS_SSH_KEY VPS_KNOWN_HOSTS; do
             if [ -z "${!name}" ]; then
               echo "::error::Repository secret $name is not set (Settings -> Secrets and variables -> Actions)"
               exit 1
@@ -98,7 +95,10 @@ jobs:
             echo "::error::VPS_SSH_KEY is not a valid private key (paste the whole file, BEGIN and END lines included)"
             exit 1
           fi
-          # The server's host key is public and pinned in the repo.
-          cp scripts/deploy/known_hosts ~/.ssh/known_hosts
-          ssh-keygen -l -f ~/.ssh/known_hosts
+          # Pinned server host key (secret VPS_KNOWN_HOSTS: the known_hosts line).
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > ~/.ssh/known_hosts
+          if ! ssh-keygen -l -f ~/.ssh/known_hosts > /dev/null 2>&1; then
+            echo "::error::VPS_KNOWN_HOSTS is not a valid known_hosts line"
+            exit 1
+          fi
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o IdentitiesOnly=yes "$user@$host" "deploy $GITHUB_SHA"

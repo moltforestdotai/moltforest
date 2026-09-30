@@ -13,6 +13,10 @@ out/
 .env.*
 !.env.example
 
+# production runbook and server-side deploy files: kept out of the (open-source) repo
+docs/DEPLOYMENT.md
+ops/
+
 # secrets
 *.pem
 *.key

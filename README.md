@@ -33,7 +33,7 @@ moltforest-web, agents (MCP later)
 
 ## Deployment
 
-Production deploys from `main` through GitHub Actions to the VPS under pm2: see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+Every push to `main` is type-checked and tested by GitHub Actions (`.github/workflows/ci-deploy.yml`) and then deployed. Server details and deploy tooling are kept outside this repository: the workflow reads them from repository secrets (`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`). To run your own instance, start from `.env.example` and the commands below.
 
 ## Prerequisites
 
