@@ -17,6 +17,8 @@ export interface HyperSync {
  * Minimal HyperSync JSON API client. The API token is shared with the Envio
  * indexer (30 000 units per minute, ~1 000 per query), so this client backs off
  * on 429 and pauses when the remaining budget runs low, leaving room for it.
+ * The body is always read before any pause: the request timeout covers the
+ * body download too.
  */
 export function createHyperSync(opts: {
   token: string;
@@ -24,6 +26,7 @@ export function createHyperSync(opts: {
   logger?: Logger;
   /** Pause until the window resets when fewer units than this remain. */
   minRemaining?: number;
+  timeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
   fetchImpl?: typeof fetch;
 }): HyperSync {
@@ -31,46 +34,52 @@ export function createHyperSync(opts: {
   const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const doFetch = opts.fetchImpl ?? fetch;
   const minRemaining = opts.minRemaining ?? 6_000;
+  const timeoutMs = opts.timeoutMs ?? 120_000;
   const base = (chainId: number) => template.replace("{chainId}", String(chainId));
 
-  async function request(url: string, init: RequestInit): Promise<Response> {
-    let networkFailures = 0;
+  async function request<T>(url: string, init: RequestInit): Promise<T> {
+    let failures = 0;
     for (let rateLimited = 0; rateLimited < 30; ) {
-      let res: Response;
+      let status: number;
+      let headers: Headers;
+      let text: string;
       try {
-        res = await doFetch(url, { ...init, signal: AbortSignal.timeout(60_000) });
+        const res = await doFetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+        status = res.status;
+        headers = res.headers;
+        text = await res.text();
       } catch (err) {
-        if (++networkFailures > 6) throw err;
-        opts.logger?.warn({ err: (err as Error).message, attempt: networkFailures }, "hypersync request failed; retrying");
-        await sleep(Math.min(5_000 * networkFailures, 30_000));
+        // Connection, DNS, TLS or timeout (including a slow body download).
+        if (++failures > 6) throw err;
+        opts.logger?.warn({ err: (err as Error).message, attempt: failures }, "hypersync request failed; retrying");
+        await sleep(Math.min(5_000 * failures, 30_000));
         continue;
       }
-      const reset = Number(res.headers.get("x-ratelimit-reset") ?? "20");
-      if (res.status === 429) {
+      const reset = Number(headers.get("x-ratelimit-reset") ?? "20");
+      if (status === 429) {
         rateLimited++;
         await sleep((reset + 2) * 1000);
         continue;
       }
-      if (!res.ok) throw new Error(`hypersync HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
-      const remaining = Number(res.headers.get("x-ratelimit-remaining") ?? "Infinity");
+      if (status < 200 || status >= 300) throw new Error(`hypersync HTTP ${status}: ${text.slice(0, 200)}`);
+      const remaining = Number(headers.get("x-ratelimit-remaining") ?? "Infinity");
       if (remaining < minRemaining) await sleep((reset + 1) * 1000);
-      return res;
+      return JSON.parse(text) as T;
     }
     throw new Error("hypersync: still rate limited after 30 waits");
   }
 
   return {
     async height(chainId) {
-      const res = await request(`${base(chainId)}/height`, { headers: { authorization: `Bearer ${opts.token}` } });
-      return Number(((await res.json()) as { height: number }).height);
+      const body = await request<{ height: number }>(`${base(chainId)}/height`, { headers: { authorization: `Bearer ${opts.token}` } });
+      return Number(body.height);
     },
-    async query(chainId, body) {
-      const res = await request(`${base(chainId)}/query`, {
+    query(chainId, body) {
+      return request<HsResponse>(`${base(chainId)}/query`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${opts.token}` },
         body: JSON.stringify(body),
       });
-      return (await res.json()) as HsResponse;
     },
   };
 }
