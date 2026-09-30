@@ -12,6 +12,7 @@ import type {
 } from "@moltforest/types";
 import { table, type Db } from "../db.js";
 import { createLivenessRepository } from "./liveness.js";
+import { createReceiptRepository, EMPTY_RECEIPT_SUMMARY } from "./receipts.js";
 import type { AgentCursor } from "../lib/cursor.js";
 
 export const URI_PREVIEW_LIMIT = 2_048;
@@ -163,7 +164,7 @@ function toServices(value: unknown): AgentService[] {
   );
 }
 
-function toSummary(network: NetworkName, row: AgentRow): Omit<AgentSummary, "liveness"> {
+function toSummary(network: NetworkName, row: AgentRow): Omit<AgentSummary, "liveness" | "receipts"> {
   return {
     network,
     chainId: NETWORKS[network].chainId,
@@ -200,6 +201,7 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
   const uriChanges = table(schemas.indexer, "AgentUriChange");
   const feedback = table(schemas.indexer, "Feedback");
   const liveness = createLivenessRepository(db, schemas.app);
+  const receipts = createReceiptRepository(db, schemas.app);
 
   /** Filters shared by the page query and the `total` count (no cursor). */
   function baseFilters(p: ListAgentsParams): Where {
@@ -257,8 +259,11 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
       return {
         items: await (async () => {
           const summaries = pageRows.map((r) => toSummary(p.network, r));
-          const live = await liveness.summaries(summaries.map((a) => a.services));
-          return summaries.map((a, i) => ({ ...a, liveness: live[i]! }));
+          const [live, rec] = await Promise.all([
+            liveness.summaries(summaries.map((a) => a.services)),
+            receipts.providerSummaries(NETWORKS[p.network].chainId, summaries.map((a) => a.agentId)),
+          ]);
+          return summaries.map((a, i) => ({ ...a, liveness: live[i]!, receipts: rec.get(a.agentId) ?? EMPTY_RECEIPT_SUMMARY }));
         })(),
         nextCursor:
           hasMore && last
@@ -338,10 +343,14 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
       }));
 
       const summary = toSummary(network, row);
-      const endpoints = await liveness.forServices(summary.services);
+      const [endpoints, rec] = await Promise.all([
+        liveness.forServices(summary.services),
+        receipts.providerSummaries(chainId, [summary.agentId]),
+      ]);
       return {
         ...summary,
         liveness: liveness.summarize(endpoints),
+        receipts: rec.get(summary.agentId) ?? EMPTY_RECEIPT_SUMMARY,
         agentUri: truncate(row.agent_uri),
         agentUriTruncated: row.agent_uri.length > URI_PREVIEW_LIMIT,
         metadataError: row.metadata_error,

@@ -104,6 +104,23 @@ export interface AgentSummary {
   updatedAt: string;
   reputation: AgentReputationSummary;
   liveness: AgentLiveness;
+  receipts: AgentReceiptSummary;
+}
+
+/**
+ * Execution receipts submitted to MoltForest with this agent as the **provider**
+ * (decision D06). Level 1 is the provider's own signed claim; level 2 is also
+ * co-signed by the client. Receipts where the agent is only the client are not
+ * counted here.
+ */
+export interface AgentReceiptSummary {
+  total: number;
+  /** Co-signed by the client agent (level 2). */
+  coSigned: number;
+  /** Confirmed on the ReceiptRegistry. */
+  anchored: number;
+  /** Latest `completedAt` (ISO), or null. */
+  lastCompletedAt: string | null;
 }
 
 export interface AgentUriHistoryEntry {

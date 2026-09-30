@@ -1,7 +1,10 @@
 import { networkByChainId } from "@moltforest/chain";
-import type { ReceiptAnchorStatus, ReceiptLevel, ReceiptRole, ReceiptView } from "@moltforest/types";
+import type { AgentReceiptSummary, ReceiptAnchorStatus, ReceiptLevel, ReceiptRole, ReceiptView } from "@moltforest/types";
 import { proofTypeName } from "@moltforest/receipts";
 import { table, type Db } from "../db.js";
+import { isMissingRelation } from "./sync.js";
+
+export const EMPTY_RECEIPT_SUMMARY: AgentReceiptSummary = { total: 0, coSigned: 0, anchored: 0, lastCompletedAt: null };
 
 /** app.receipt row as node-postgres returns it (NUMERIC and INT8 as strings). */
 export interface ReceiptRow {
@@ -105,6 +108,38 @@ export function createReceiptRepository(db: Db, appSchema: string) {
         [receiptHash, signature, signer],
       );
       return r.rows[0] ?? null;
+    },
+
+    /**
+     * Receipt counts per provider agent. Missing table (migrations not applied
+     * yet) counts as no receipts, so agent pages keep working.
+     */
+    async providerSummaries(chainId: number, agentIds: string[]): Promise<Map<string, AgentReceiptSummary>> {
+      const out = new Map<string, AgentReceiptSummary>();
+      if (agentIds.length === 0) return out;
+      try {
+        const r = await db.query<{ agent_id: string; total: string; co_signed: string; anchored: string; last_completed: string | null }>(
+          `SELECT provider_agent_id::text AS agent_id, count(*)::text AS total,
+                  count(*) FILTER (WHERE level = 2)::text AS co_signed,
+                  count(*) FILTER (WHERE anchor_status = 'anchored')::text AS anchored,
+                  max(completed_at)::text AS last_completed
+             FROM ${receipts}
+            WHERE chain_id = $1 AND provider_agent_id = ANY($2::numeric[])
+            GROUP BY provider_agent_id`,
+          [chainId, agentIds],
+        );
+        for (const row of r.rows) {
+          out.set(row.agent_id, {
+            total: Number(row.total),
+            coSigned: Number(row.co_signed),
+            anchored: Number(row.anchored),
+            lastCompletedAt: row.last_completed === null ? null : new Date(Number(row.last_completed) * 1000).toISOString(),
+          });
+        }
+      } catch (err) {
+        if (!isMissingRelation(err)) throw err;
+      }
+      return out;
     },
 
     async listForAgent(params: {

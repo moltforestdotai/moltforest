@@ -68,7 +68,7 @@ async function setup(): Promise<void> {
   for (const t of ["Agent", "AgentUriChange", "Feedback", "envio_chains"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE envio."${t}" INCLUDING DEFAULTS)`);
   }
-  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily"]) {
+  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE app."${t}" INCLUDING ALL)`);
   }
 
@@ -369,6 +369,34 @@ describe("API (integration)", () => {
 
       const test = (await request(app).get("/v1/sync-status?network=testnet")).body as SyncStatus;
       expect(test).toMatchObject({ indexed: false, indexer: null, chain: { error: "rpc down" }, missingAgents: null });
+    });
+
+    run("counts receipts where the agent is the provider, not the client", async () => {
+      const receipt = (n: number, provider: number, client: number, level: 1 | 2, status: string) =>
+        db!.query(
+          `INSERT INTO "${SCHEMA}".receipt (receipt_hash, chain_id, registry, task_id, client_agent_id, provider_agent_id, request_hash,
+             result_hash, payment_ref, started_at, completed_at, proof_type, proof_ref, level, provider_signature, provider_signer,
+             anchor_status)
+           VALUES ($1, 143, '0x00', '0x00', $2, $3, '0x00', '0x00', '0x00', $4, $4, 0, '0x00', $5, '0x00', '0x00', $6)`,
+          [`0x${String(n).padStart(64, "0")}`, client, provider, 1_790_000_000 + n, level, status],
+        );
+      await receipt(1, 3, 4, 1, "queued");
+      await receipt(2, 3, 4, 2, "anchored");
+      await receipt(3, 4, 3, 2, "anchored"); // agent 3 is only the client here
+      try {
+        const list = (await request(app).get("/v1/agents")).body as AgentListResponse;
+        expect(list.items.find((a) => a.agentId === "3")!.receipts).toEqual({
+          total: 2,
+          coSigned: 1,
+          anchored: 1,
+          lastCompletedAt: new Date((1_790_000_000 + 2) * 1000).toISOString(),
+        });
+        expect(list.items.find((a) => a.agentId === "0")!.receipts).toEqual({ total: 0, coSigned: 0, anchored: 0, lastCompletedAt: null });
+        const detail = (await request(app).get("/v1/agents/mainnet/4")).body as AgentDetail;
+        expect(detail.receipts).toMatchObject({ total: 1, coSigned: 1 });
+      } finally {
+        await db!.query(`DELETE FROM "${SCHEMA}".receipt`);
+      }
     });
 
     run("rolls endpoint liveness up per agent and details it per endpoint", async () => {
