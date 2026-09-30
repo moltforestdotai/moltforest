@@ -15,6 +15,11 @@ export interface NetworkConfig {
   identityRegistry: `0x${string}`;
   reputationRegistry: `0x${string}`;
   usdc: `0x${string}`;
+  /**
+   * Our ReceiptRegistry (decision D06). Deployed on testnet only (D05);
+   * undefined until deployed, which keeps receipt endpoints disabled.
+   */
+  receiptRegistry?: { address: `0x${string}`; deployBlock: number };
 }
 
 export const NETWORKS: Record<NetworkName, NetworkConfig> = {
@@ -37,6 +42,8 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     identityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
     reputationRegistry: "0x8004B663056A597Dffe9eCcC1965A193B7388713",
     usdc: "0x534b2f3A21130d7a60830c2Df862319e593943A3",
+    // Deployed 2026-09-30, tx 0xfa900ba70c52562a1609e7de32972d57d820a3b9729e3317aa8dee66638c3a26.
+    receiptRegistry: { address: "0x4d2a256fCaAc8e52e4B91e977EF6dDD56E980f98", deployBlock: 67037698 },
   },
 };
 

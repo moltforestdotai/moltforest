@@ -235,6 +235,71 @@ export interface SyncStatus {
   missingAgents: string | null;
 }
 
+/**
+ * Execution receipts (decision D06). A receipt is evidence that a job happened,
+ * not a proof of what happened (constraint C4). Level 1 = provider signed,
+ * level 2 = client co-signed; levels 3–5 (validation, ZK, TEE) are reserved.
+ */
+export type ReceiptLevel = 1 | 2;
+export type ReceiptAnchorStatus = "queued" | "sending" | "anchored" | "failed" | "skipped";
+/** What the signers claim about extra proof; recorded, never verified or scored by MoltForest. */
+export type ClaimedProofType = "none" | "zk" | "tee" | "validator" | "unknown";
+
+/** The signed EIP-712 fields, as sent to POST /v1/receipts. Timestamps are unix seconds. */
+export interface ReceiptFields {
+  taskId: string;
+  clientAgentId: string;
+  providerAgentId: string;
+  requestHash: string;
+  resultHash: string;
+  /** x402 settlement tx hash, or 32 zero bytes. */
+  paymentRef: string;
+  startedAt: number;
+  completedAt: number;
+  proofType: number;
+  proofRef: string;
+}
+
+export interface ReceiptView {
+  /** EIP-712 digest of the receipt; its id on-chain and here. */
+  receiptHash: string;
+  network: NetworkName;
+  chainId: number;
+  /** ReceiptRegistry the receipt was signed for (EIP-712 verifyingContract). */
+  registry: string;
+  receipt: ReceiptFields;
+  level: ReceiptLevel;
+  claimedProofType: ClaimedProofType;
+  signatures: { provider: string; client: string | null };
+  /** Addresses that signed for each agent when the receipt was verified. */
+  signers: { provider: string; client: string | null };
+  submittedAt: string;
+  anchor: {
+    status: ReceiptAnchorStatus;
+    /** Level confirmed on-chain; can trail `level` while a co-signature is relayed. */
+    level: ReceiptLevel | null;
+    txHash: string | null;
+    blockNumber: string | null;
+    anchoredAt: string | null;
+    error: string | null;
+  };
+}
+
+export interface ReceiptSubmitResponse extends ReceiptView {
+  /** True when this exact receipt was already stored (submission is idempotent). */
+  duplicate: boolean;
+}
+
+export type ReceiptRole = "provider" | "client" | "any";
+
+export interface AgentReceiptsResponse {
+  network: NetworkName;
+  agentId: string;
+  role: ReceiptRole;
+  items: ReceiptView[];
+  nextCursor: string | null;
+}
+
 export interface ApiErrorBody {
   error: {
     code: string;

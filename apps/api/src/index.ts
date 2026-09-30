@@ -6,6 +6,7 @@ import { createChainChecker } from "./services/chainCheck.js";
 import { ActivityHub } from "./services/activityHub.js";
 import { createActivityRepository } from "./repositories/activity.js";
 import { createSyncRepository } from "./repositories/sync.js";
+import { createReceiptNetworks } from "./services/receiptNetworks.js";
 
 const config = loadConfig();
 const logger = pino({ level: config.LOG_LEVEL });
@@ -28,7 +29,24 @@ const activityHub = new ActivityHub(
 );
 activityHub.start();
 
-const app = createApp({ config, db, chain, activityHub, logger });
+const receiptNetworks = createReceiptNetworks({
+  rpcUrls: { mainnet: config.MONAD_RPC_URL_MAINNET, testnet: config.MONAD_RPC_URL_TESTNET },
+  registryOverrides: { mainnet: config.RECEIPT_REGISTRY_MAINNET, testnet: config.RECEIPT_REGISTRY_TESTNET },
+});
+logger.info({ networks: Object.keys(receiptNetworks) }, "receipt submission enabled on these networks");
+
+const app = createApp({
+  config,
+  db,
+  chain,
+  activityHub,
+  receipts: {
+    networks: receiptNetworks,
+    submitPerMinute: config.RECEIPT_SUBMIT_PER_MINUTE,
+    maxFutureSeconds: config.RECEIPT_MAX_FUTURE_SECONDS,
+  },
+  logger,
+});
 const server = app.listen(config.API_PORT, () => {
   logger.info(`MoltForest API listening on http://localhost:${config.API_PORT}`);
 });

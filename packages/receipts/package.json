@@ -1,0 +1,24 @@
+{
+  "name": "@moltforest/receipts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EIP-712 execution receipts: types, JSON format, hashing, signing and signature checks",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@moltforest/chain": "workspace:*",
+    "viem": "^2.56.9",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.0"
+  }
+}

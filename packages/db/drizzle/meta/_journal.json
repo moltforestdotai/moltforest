@@ -15,6 +15,13 @@
       "when": 1790582878399,
       "tag": "0001_broken_spirit",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790747336434,
+      "tag": "0002_familiar_vampiro",
+      "breakpoints": true
     }
   ]
 }

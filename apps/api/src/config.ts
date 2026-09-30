@@ -7,6 +7,11 @@ loadDotenv({ path: fileURLToPath(new URL("../../../.env", import.meta.url)), qui
 
 const schemaName = z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/, "must be a plain lowercase Postgres schema name");
 
+const address = z
+  .string()
+  .regex(/^0x[0-9a-fA-F]{40}$/, "must be a 0x-prefixed 20-byte address")
+  .transform((s) => s.toLowerCase() as `0x${string}`);
+
 const EnvSchema = z.object({
   DATABASE_URL: z.string().url(),
   DATABASE_SSL: z.enum(["disable", "require", "verify-full"]).default("disable"),
@@ -25,6 +30,11 @@ const EnvSchema = z.object({
   CHAIN_CHECK_TTL_SECONDS: z.coerce.number().int().min(5).default(60),
   ACTIVITY_POLL_MS: z.coerce.number().int().min(250).max(60_000).default(2_000),
   ACTIVITY_MAX_STREAMS: z.coerce.number().int().min(1).max(10_000).default(500),
+  /** Overrides the ReceiptRegistry address from @moltforest/chain (e.g. a local Anvil deployment). */
+  RECEIPT_REGISTRY_TESTNET: address.optional(),
+  RECEIPT_REGISTRY_MAINNET: address.optional(),
+  RECEIPT_SUBMIT_PER_MINUTE: z.coerce.number().int().min(1).default(30),
+  RECEIPT_MAX_FUTURE_SECONDS: z.coerce.number().int().min(0).max(86_400).default(300),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 

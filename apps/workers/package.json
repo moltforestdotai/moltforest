@@ -2,7 +2,7 @@
   "name": "@moltforest/workers",
   "version": "0.1.0",
   "private": true,
-  "description": "Background workers: registration-file enrichment (more in later phases)",
+  "description": "Background workers: registration-file enrichment, endpoint liveness, receipt relay",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@moltforest/chain": "workspace:*",
     "@moltforest/db": "workspace:*",
     "@moltforest/registration": "workspace:*",
     "dotenv": "^17.2.3",
@@ -18,9 +19,11 @@
     "pg": "^8.16.3",
     "pino": "^10.0.0",
     "undici": "^7.30.0",
+    "viem": "^2.56.9",
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@moltforest/receipts": "workspace:*",
     "@types/node": "^24.12.2",
     "@types/pg": "^8.15.5",
     "tsx": "^4.20.6",

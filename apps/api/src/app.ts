@@ -14,6 +14,9 @@ import { metaRouter } from "./routes/meta.js";
 import { activityRouter } from "./routes/activity.js";
 import { createActivityRepository } from "./repositories/activity.js";
 import type { ActivityHub } from "./services/activityHub.js";
+import { receiptsRouter } from "./routes/receipts.js";
+import { createReceiptRepository } from "./repositories/receipts.js";
+import type { ReceiptNetworks } from "./services/receiptNetworks.js";
 import { errorHandler, notFound } from "./lib/errors.js";
 
 export interface AppDeps {
@@ -22,10 +25,14 @@ export interface AppDeps {
   chain: ChainChecker;
   /** Live activity for SSE; omitted in tests that do not need streaming. */
   activityHub?: ActivityHub;
+  /** Receipt submission; without networks, POST /v1/receipts answers 503 and reads still work. */
+  receipts?: { networks: ReceiptNetworks; submitPerMinute: number; maxFutureSeconds: number };
   logger?: Logger;
 }
 
-export function createApp({ config, db, chain, activityHub, logger }: AppDeps): Express {
+const rateLimited = { error: { code: "rate_limited", message: "Too many requests, slow down." } };
+
+export function createApp({ config, db, chain, activityHub, receipts, logger }: AppDeps): Express {
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -40,7 +47,7 @@ export function createApp({ config, db, chain, activityHub, logger }: AppDeps): 
       limit: config.RATE_LIMIT_PER_MINUTE,
       standardHeaders: "draft-8",
       legacyHeaders: false,
-      message: { error: { code: "rate_limited", message: "Too many requests, slow down." } },
+      message: rateLimited,
     }),
   );
 
@@ -53,6 +60,20 @@ export function createApp({ config, db, chain, activityHub, logger }: AppDeps): 
   app.use(
     "/v1/activity",
     activityRouter(createActivityRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA }), activityHub),
+  );
+  app.use(
+    "/v1",
+    receiptsRouter(createReceiptRepository(db, config.APP_DB_SCHEMA), receipts?.networks ?? {}, {
+      maxFutureSeconds: receipts?.maxFutureSeconds ?? 300,
+      // Submissions cost RPC reads to verify and relayer gas to anchor, so they get a tighter limit.
+      submitLimiter: rateLimit({
+        windowMs: 60_000,
+        limit: receipts?.submitPerMinute ?? 30,
+        standardHeaders: "draft-8",
+        legacyHeaders: false,
+        message: rateLimited,
+      }),
+    }),
   );
 
   app.use(notFound);

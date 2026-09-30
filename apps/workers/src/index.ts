@@ -2,6 +2,7 @@
  * Background workers (single instance; each work table is its own queue):
  * - enrichment: fetches remote ERC-8004 registration files into app.agent_profile
  * - liveness:   probes declared http(s) service endpoints into app.endpoint_status
+ * - relay:      anchors submitted receipts (app.receipt) on the ReceiptRegistry
  */
 import { pino, type Logger } from "pino";
 import { createPool } from "@moltforest/db";
@@ -12,6 +13,10 @@ import { createProfileRepository } from "./enrich/repository.js";
 import { runBatch } from "./enrich/runner.js";
 import { createLivenessRepository } from "./liveness/repository.js";
 import { runLivenessBatch } from "./liveness/runner.js";
+import { NETWORK_NAMES, NETWORKS } from "@moltforest/chain";
+import { createAnchorChain } from "./anchor/chain.js";
+import { createAnchorRepository } from "./anchor/repository.js";
+import { runAnchorBatch } from "./anchor/runner.js";
 
 const config = loadConfig();
 const logger = pino({ level: config.LOG_LEVEL });
@@ -63,6 +68,46 @@ const liveness = () => {
   });
 };
 
+/** One relay loop per network with a ReceiptRegistry (normally testnet only). */
+const relays = () => {
+  const log = logger.child({ worker: "relay" });
+  if (!config.RECEIPT_RELAY_ENABLED) return [];
+  const rpcUrls = { mainnet: config.MONAD_RPC_URL_MAINNET, testnet: config.MONAD_RPC_URL_TESTNET };
+  const overrides = { mainnet: config.RECEIPT_REGISTRY_MAINNET, testnet: config.RECEIPT_REGISTRY_TESTNET };
+  const repo = createAnchorRepository(db, schemas.app);
+  const loops: Promise<void>[] = [];
+  for (const name of NETWORK_NAMES) {
+    const network = NETWORKS[name];
+    const registry = overrides[name] ?? network.receiptRegistry?.address;
+    if (!registry) continue;
+    if (!config.RELAYER_PRIVATE_KEY) {
+      log.info({ network: name }, "receipt relay off: RELAYER_PRIVATE_KEY is not set (receipts stay queued)");
+      continue;
+    }
+    const chain = createAnchorChain({ network, rpcUrl: rpcUrls[name] ?? network.defaultRpcUrl, registry, privateKey: config.RELAYER_PRIVATE_KEY });
+    log.info({ network: name, registry, relayer: chain.relayer }, "receipt relay on");
+    const netLog = log.child({ network: name });
+    loops.push(
+      loop(`relay:${name}`, netLog, config.RECEIPT_RELAY_IDLE_POLL_SECONDS * 1000, async () => {
+        const stats = await runAnchorBatch(
+          { repo, chain, logger: netLog },
+          {
+            chainId: network.chainId,
+            batchSize: config.RECEIPT_RELAY_BATCH_SIZE,
+            maxPerAgentPerDay: config.RECEIPT_RELAY_MAX_PER_AGENT_PER_DAY,
+            minBalanceWei: config.RECEIPT_RELAY_MIN_BALANCE_MON,
+            txTimeoutMs: config.RECEIPT_RELAY_TX_TIMEOUT_SECONDS * 1000,
+            droppedAfterMs: 10 * 60_000,
+            maxAttempts: config.RECEIPT_RELAY_MAX_ATTEMPTS,
+          },
+        );
+        return { selected: stats.selected, full: !stats.lowBalance && stats.selected >= config.RECEIPT_RELAY_BATCH_SIZE, stats };
+      }),
+    );
+  }
+  return loops;
+};
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     logger.info(`${signal} received; finishing current batches`);
@@ -70,5 +115,5 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-await Promise.all([enrichment(), config.LIVENESS_ENABLED ? liveness() : Promise.resolve()]);
+await Promise.all([enrichment(), config.LIVENESS_ENABLED ? liveness() : Promise.resolve(), ...relays()]);
 await db.end();

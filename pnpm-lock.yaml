@@ -16,6 +16,9 @@ importers:
       '@moltforest/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@moltforest/receipts':
+        specifier: workspace:*
+        version: link:../../packages/receipts
       '@moltforest/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -43,6 +46,9 @@ importers:
       pino-http:
         specifier: ^11.0.0
         version: 11.0.0
+      viem:
+        specifier: ^2.56.9
+        version: 2.56.9(typescript@6.0.3)(zod@4.6.5)
       zod:
         specifier: ^4.1.12
         version: 4.6.5
@@ -77,6 +83,9 @@ importers:
 
   apps/workers:
     dependencies:
+      '@moltforest/chain':
+        specifier: workspace:*
+        version: link:../../packages/chain
       '@moltforest/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -98,10 +107,16 @@ importers:
       undici:
         specifier: ^7.30.0
         version: 7.30.0
+      viem:
+        specifier: ^2.56.9
+        version: 2.56.9(typescript@6.0.3)(zod@4.6.5)
       zod:
         specifier: ^4.1.12
         version: 4.6.5
     devDependencies:
+      '@moltforest/receipts':
+        specifier: workspace:*
+        version: link:../../packages/receipts
       '@types/node':
         specifier: ^24.12.2
         version: 24.13.6
@@ -158,6 +173,28 @@ importers:
       tsx:
         specifier: ^4.20.6
         version: 4.23.15
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.11(@types/node@24.13.6)(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(tsx@4.23.15))
+
+  packages/receipts:
+    dependencies:
+      '@moltforest/chain':
+        specifier: workspace:*
+        version: link:../chain
+      viem:
+        specifier: ^2.56.9
+        version: 2.56.9(typescript@6.0.3)(zod@4.6.5)
+      zod:
+        specifier: ^4.1.12
+        version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: ^24.12.2
+        version: 24.13.6
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
