@@ -67,6 +67,11 @@ const EnvSchema = z.object({
   RECEIPT_RELAY_TX_TIMEOUT_SECONDS: z.coerce.number().int().min(5).max(600).default(60),
   RECEIPT_RELAY_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(50).default(8),
   RECEIPT_RELAY_IDLE_POLL_SECONDS: z.coerce.number().int().min(1).default(15),
+  // --- x402 payments (decision D33; HyperSync, same token as the indexer) ---
+  ENVIO_API_TOKEN: z.string().trim().min(1).optional(),
+  HYPERSYNC_URL_TEMPLATE: z.string().default("https://{chainId}.hypersync.xyz"),
+  PAYMENTS_ENABLED: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
+  PAYMENTS_POLL_SECONDS: z.coerce.number().int().min(30).default(300),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 

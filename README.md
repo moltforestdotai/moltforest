@@ -22,7 +22,7 @@ moltforest-web, agents (MCP later)
 | Path | What it is |
 |---|---|
 | `apps/indexer` | Envio indexer for the ERC-8004 registries on both chains. Runs only in Docker: Envio has no Windows build. Not part of the pnpm workspace. |
-| `apps/workers` | Three loops. **Enrichment** fetches registration files behind https/http/ipfs agentURIs (≈97% of agents) into `app.agent_profile`. **Liveness** probes every declared http(s) service endpoint every ~15 min into `app.endpoint_status` and daily uptime roll-ups. Both use SSRF protection, time/size limits and per-host rate limits. **Relay** anchors submitted receipts on the ReceiptRegistry with a testnet-only key (off without `RELAYER_PRIVATE_KEY`). |
+| `apps/workers` | Four loops. **Enrichment** fetches registration files behind https/http/ipfs agentURIs (≈97% of agents) into `app.agent_profile`. **Liveness** probes every declared http(s) service endpoint every ~15 min into `app.endpoint_status` and daily uptime roll-ups. Both use SSRF protection, time/size limits and per-host rate limits. **Relay** anchors submitted receipts on the ReceiptRegistry with a testnet-only key (off without `RELAYER_PRIVATE_KEY`). **Payments** indexes x402 USDC settlements (`transferWithAuthorization`) that involve an agent's owner or agent wallet, from HyperSync (off without `ENVIO_API_TOKEN`). |
 | `apps/api` | Express API. Reads the indexer's tables and the enrichment results; never writes the indexer's tables. |
 | `packages/registration` | Registration-file parser. The indexer gets a byte-identical copy (`pnpm sync:registration`; a test enforces it). |
 | `packages/db` | Drizzle schema and migrations for our own tables (schema `app`). |
@@ -95,6 +95,8 @@ pnpm dev:api                # http://localhost:4000
 | `POST /v1/receipts` | Submit a signed execution receipt (see below). `202` when stored, `200` when already known |
 | `GET /v1/receipts/:receiptHash` | One receipt with its signatures, signers and anchoring status |
 | `GET /v1/agents/:network/:agentId/receipts?role=provider\|client\|any&limit=&cursor=` | An agent's receipts, newest first |
+| `GET /v1/agents/:network/:agentId/payments?direction=received\|sent\|self\|any&limit=&cursor=` | An agent's x402 payments (matched on its owner and agent wallet), newest first. Payments between its own addresses are `self` |
+| `GET /v1/payments/:txHash?network=` | x402 payments in a transaction |
 
 All endpoints are free for now and rate-limited per IP.
 

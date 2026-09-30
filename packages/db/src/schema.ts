@@ -157,6 +157,59 @@ export const receipt = app.table(
   ],
 );
 
+/**
+ * x402-style payments (decision D33): USDC settlements made with EIP-3009
+ * `transferWithAuthorization`, found by an `AuthorizationUsed` log and the
+ * matching `Transfer` in the same transaction. Only payments where the payer
+ * or the payee is a tracked agent address are stored. Amounts are base units.
+ */
+export const x402Payment = app.table(
+  "x402_payment",
+  {
+    chainId: integer("chain_id").notNull(),
+    txHash: text("tx_hash").notNull(),
+    /** Log index of the USDC Transfer. */
+    logIndex: integer("log_index").notNull(),
+    blockNumber: bigint("block_number", { mode: "number" }).notNull(),
+    blockTime: timestamp("block_time", { withTimezone: true }).notNull(),
+    /** Token contract (USDC). */
+    asset: text("asset").notNull(),
+    payer: text("payer").notNull(),
+    payee: text("payee").notNull(),
+    amount: numeric("amount", { precision: 78, scale: 0, mode: "string" }).notNull(),
+    /** Transaction sender, normally the x402 facilitator. */
+    facilitator: text("facilitator"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.chainId, t.txHash, t.logIndex] }),
+    index("x402_payment_payer_idx").on(t.chainId, t.payer, t.blockNumber),
+    index("x402_payment_payee_idx").on(t.chainId, t.payee, t.blockNumber),
+  ],
+);
+
+/**
+ * Agent owner and wallet addresses whose payments are tracked. A new address
+ * is backfilled from block 0 up to the chain's cursor once, then `caught_up`.
+ */
+export const paymentAddress = app.table(
+  "payment_address",
+  {
+    chainId: integer("chain_id").notNull(),
+    address: text("address").notNull(),
+    caughtUp: boolean("caught_up").notNull().default(false),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.chainId, t.address] }), index("payment_address_pending_idx").on(t.chainId).where(sql`NOT caught_up`)],
+);
+
+/** Next block to scan per chain: every caught-up address is complete below it. */
+export const paymentCursor = app.table("payment_cursor", {
+  chainId: integer("chain_id").primaryKey(),
+  nextBlock: bigint("next_block", { mode: "number" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Every distinct version of a registration file we have seen (provenance, churn). */
 export const agentProfileSnapshot = app.table(
   "agent_profile_snapshot",

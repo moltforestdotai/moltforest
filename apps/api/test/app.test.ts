@@ -10,7 +10,14 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import type { ActivityListResponse, AgentDetail, AgentListResponse, SyncStatus } from "@moltforest/types";
+import type {
+  ActivityListResponse,
+  AgentDetail,
+  AgentListResponse,
+  AgentPaymentsResponse,
+  PaymentLookupResponse,
+  SyncStatus,
+} from "@moltforest/types";
 import { loadConfig } from "../src/config.js";
 import { createDb, type Db } from "../src/db.js";
 import { createApp } from "../src/app.js";
@@ -68,7 +75,7 @@ async function setup(): Promise<void> {
   for (const t of ["Agent", "AgentUriChange", "Feedback", "envio_chains"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE envio."${t}" INCLUDING DEFAULTS)`);
   }
-  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt"]) {
+  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt", "x402_payment"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE app."${t}" INCLUDING ALL)`);
   }
 
@@ -369,6 +376,59 @@ describe("API (integration)", () => {
 
       const test = (await request(app).get("/v1/sync-status?network=testnet")).body as SyncStatus;
       expect(test).toMatchObject({ indexed: false, indexer: null, chain: { error: "rpc down" }, missingAgents: null });
+    });
+
+    run("counts x402 payments per agent: received from others, sent, and self-payments", async () => {
+      const EXT = "0x00000000000000000000000000000000000000ee";
+      const tx = (n: number) => `0x${String(n).padStart(64, "0")}`;
+      const pay = (n: number, payer: string, payee: string, units: number) =>
+        db!.query(
+          `INSERT INTO "${SCHEMA}".x402_payment (chain_id, tx_hash, log_index, block_number, block_time, asset, payer, payee, amount, facilitator)
+           VALUES (143, $1, 1, $2, $3, '0xusdc', $4, $5, $6, '0xfacilitator')`,
+          [tx(n), 5000 + n, new Date(Date.UTC(2026, 8, n)), payer, payee, units],
+        );
+      await pay(1, OWNER_A, OWNER_B, 1_000_000); // agents owned by A pay agent 3
+      await pay(2, EXT, OWNER_B, 2_500_000); // an outside wallet pays agent 3
+      await pay(3, OWNER_B, OWNER_B, 10_000_000); // agent 3 pays itself
+      await pay(4, OWNER_B, EXT, 500_000); // agent 3 pays an outside wallet
+      try {
+        const list = (await request(app).get("/v1/agents?includeIncomplete=true")).body as AgentListResponse;
+        expect(list.items.find((a) => a.agentId === "3")!.payments).toEqual({
+          receivedFromOthers: 2,
+          sent: 1,
+          selfPayments: 1,
+          receivedAmount: "3.5",
+          sentAmount: "0.5",
+          lastPaymentAt: new Date(Date.UTC(2026, 8, 4)).toISOString(),
+        });
+        expect(list.items.find((a) => a.agentId === "4")!.payments).toMatchObject({ receivedFromOthers: 0, sent: 1, sentAmount: "1", selfPayments: 0 });
+
+        const all = (await request(app).get("/v1/agents/mainnet/3/payments")).body as AgentPaymentsResponse;
+        expect(all.addresses).toEqual([{ address: OWNER_B, roles: ["owner", "wallet"], agentCount: 1 }]);
+        expect(all.items.map((p) => [p.txHash, p.direction, p.amount])).toEqual([
+          [tx(4), "sent", "0.5"],
+          [tx(3), "self", "10"],
+          [tx(2), "received", "2.5"],
+          [tx(1), "received", "1"],
+        ]);
+        const fromA = all.items.find((p) => p.txHash === tx(1))!;
+        expect(fromA).toMatchObject({ payer: OWNER_A, payerAgentCount: 8, payeeAgentIds: ["3"], payeeAgentCount: 1, facilitator: "0xfacilitator", assetSymbol: "USDC" });
+        expect(fromA.payerAgentIds.slice(0, 3)).toEqual(["0", "1", "2"]);
+
+        const received = (await request(app).get("/v1/agents/mainnet/3/payments?direction=received&limit=1")).body as AgentPaymentsResponse;
+        expect(received.items.map((p) => p.txHash)).toEqual([tx(2)]);
+        const next = (await request(app).get(`/v1/agents/mainnet/3/payments?direction=received&limit=1&cursor=${received.nextCursor}`)).body as AgentPaymentsResponse;
+        expect(next.items.map((p) => p.txHash)).toEqual([tx(1)]);
+        expect(next.nextCursor).toBeNull();
+
+        const lookup = (await request(app).get(`/v1/payments/${tx(2).toUpperCase().replace("0X", "0x")}`)).body as PaymentLookupResponse;
+        expect(lookup.items).toMatchObject([{ network: "mainnet", payer: EXT, payeeAgentIds: ["3"], amount: "2.5" }]);
+        expect(((await request(app).get(`/v1/payments/${tx(99)}?network=testnet`)).body as PaymentLookupResponse).items).toEqual([]);
+        expect((await request(app).get("/v1/payments/0x1234")).status).toBe(400);
+        expect((await request(app).get("/v1/agents/mainnet/999/payments")).status).toBe(404);
+      } finally {
+        await db!.query(`DELETE FROM "${SCHEMA}".x402_payment`);
+      }
     });
 
     run("counts receipts where the agent is the provider, not the client", async () => {

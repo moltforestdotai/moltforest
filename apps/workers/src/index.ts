@@ -3,6 +3,7 @@
  * - enrichment: fetches remote ERC-8004 registration files into app.agent_profile
  * - liveness:   probes declared http(s) service endpoints into app.endpoint_status
  * - relay:      anchors submitted receipts (app.receipt) on the ReceiptRegistry
+ * - payments:   indexes x402 USDC settlements touching agent addresses (app.x402_payment)
  */
 import { pino, type Logger } from "pino";
 import { createPool } from "@moltforest/db";
@@ -17,6 +18,9 @@ import { NETWORK_NAMES, NETWORKS } from "@moltforest/chain";
 import { createAnchorChain } from "./anchor/chain.js";
 import { createAnchorRepository } from "./anchor/repository.js";
 import { runAnchorBatch } from "./anchor/runner.js";
+import { createHyperSync } from "./payments/hypersync.js";
+import { createPaymentRepository } from "./payments/repository.js";
+import { runPaymentsTick } from "./payments/runner.js";
 
 const config = loadConfig();
 const logger = pino({ level: config.LOG_LEVEL });
@@ -108,6 +112,28 @@ const relays = () => {
   return loops;
 };
 
+/** One payments loop per network (both chains); off without a HyperSync token. */
+const payments = () => {
+  const log = logger.child({ worker: "payments" });
+  if (!config.PAYMENTS_ENABLED) return [];
+  if (!config.ENVIO_API_TOKEN) {
+    log.info("x402 payments off: ENVIO_API_TOKEN is not set");
+    return [];
+  }
+  const hs = createHyperSync({ token: config.ENVIO_API_TOKEN, urlTemplate: config.HYPERSYNC_URL_TEMPLATE, logger: log });
+  const repo = createPaymentRepository(db, schemas);
+  return NETWORK_NAMES.map((name) => {
+    const network = NETWORKS[name];
+    const netLog = log.child({ network: name });
+    return loop(`payments:${name}`, netLog, config.PAYMENTS_POLL_SECONDS * 1000, async () => {
+      const stats = await runPaymentsTick({ repo, hs, logger: netLog }, { chainId: network.chainId, usdc: network.usdc.toLowerCase() });
+      // Pending backfill left: run again soon instead of waiting a full poll interval.
+      const more = (await repo.addresses(network.chainId, false, 1)).length > 0;
+      return { selected: stats.saved + stats.backfilled, full: more, stats };
+    });
+  });
+};
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     logger.info(`${signal} received; finishing current batches`);
@@ -115,5 +141,5 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-await Promise.all([enrichment(), config.LIVENESS_ENABLED ? liveness() : Promise.resolve(), ...relays()]);
+await Promise.all([enrichment(), config.LIVENESS_ENABLED ? liveness() : Promise.resolve(), ...relays(), ...payments()]);
 await db.end();

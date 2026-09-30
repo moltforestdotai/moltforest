@@ -15,6 +15,8 @@ import { activityRouter } from "./routes/activity.js";
 import { createActivityRepository } from "./repositories/activity.js";
 import type { ActivityHub } from "./services/activityHub.js";
 import { receiptsRouter } from "./routes/receipts.js";
+import { paymentsRouter } from "./routes/payments.js";
+import { createPaymentRepository } from "./repositories/payments.js";
 import { createReceiptRepository } from "./repositories/receipts.js";
 import type { ReceiptNetworks } from "./services/receiptNetworks.js";
 import { errorHandler, notFound } from "./lib/errors.js";
@@ -75,6 +77,8 @@ export function createApp({ config, db, chain, activityHub, receipts, logger }: 
       }),
     }),
   );
+
+  app.use("/v1", paymentsRouter(createPaymentRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA })));
 
   app.use(notFound);
   app.use(errorHandler);

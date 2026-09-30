@@ -105,6 +105,67 @@ export interface AgentSummary {
   reputation: AgentReputationSummary;
   liveness: AgentLiveness;
   receipts: AgentReceiptSummary;
+  payments: AgentPaymentSummary;
+}
+
+/**
+ * x402 payments (decision D33): USDC settlements made with EIP-3009
+ * transferWithAuthorization where the agent's owner or agent wallet is the
+ * payer or the payee. Amounts are decimal USDC strings. Payments between the
+ * agent's own addresses are counted separately and never as received from others.
+ */
+export interface AgentPaymentSummary {
+  receivedFromOthers: number;
+  sent: number;
+  /** The agent paying itself (payer and payee are its own owner/wallet). */
+  selfPayments: number;
+  receivedAmount: string;
+  sentAmount: string;
+  lastPaymentAt: string | null;
+}
+
+export type PaymentDirection = "received" | "sent" | "self";
+
+export interface PaymentView {
+  network: NetworkName;
+  chainId: number;
+  txHash: string;
+  logIndex: number;
+  blockNumber: string;
+  blockTime: string;
+  /** Token contract. */
+  asset: string;
+  assetSymbol: "USDC";
+  /** Decimal USDC. */
+  amount: string;
+  payer: string;
+  payee: string;
+  /** Transaction sender, normally the x402 facilitator. */
+  facilitator: string | null;
+  /** Agents whose owner or agent wallet is the payer / payee (first 10). */
+  payerAgentIds: string[];
+  payerAgentCount: number;
+  payeeAgentIds: string[];
+  payeeAgentCount: number;
+}
+
+export interface AgentPaymentView extends PaymentView {
+  direction: PaymentDirection;
+}
+
+export interface AgentPaymentsResponse {
+  network: NetworkName;
+  agentId: string;
+  /** Addresses the payments are matched on, and how many agents share each. */
+  addresses: { address: string; roles: ("owner" | "wallet")[]; agentCount: number }[];
+  direction: PaymentDirection | "any";
+  items: AgentPaymentView[];
+  nextCursor: string | null;
+}
+
+export interface PaymentLookupResponse {
+  txHash: string;
+  items: PaymentView[];
 }
 
 /**

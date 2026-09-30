@@ -13,6 +13,7 @@ import type {
 import { table, type Db } from "../db.js";
 import { createLivenessRepository } from "./liveness.js";
 import { createReceiptRepository, EMPTY_RECEIPT_SUMMARY } from "./receipts.js";
+import { createPaymentRepository, EMPTY_PAYMENT_SUMMARY } from "./payments.js";
 import type { AgentCursor } from "../lib/cursor.js";
 
 export const URI_PREVIEW_LIMIT = 2_048;
@@ -164,7 +165,7 @@ function toServices(value: unknown): AgentService[] {
   );
 }
 
-function toSummary(network: NetworkName, row: AgentRow): Omit<AgentSummary, "liveness" | "receipts"> {
+function toSummary(network: NetworkName, row: AgentRow): Omit<AgentSummary, "liveness" | "receipts" | "payments"> {
   return {
     network,
     chainId: NETWORKS[network].chainId,
@@ -202,6 +203,8 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
   const feedback = table(schemas.indexer, "Feedback");
   const liveness = createLivenessRepository(db, schemas.app);
   const receipts = createReceiptRepository(db, schemas.app);
+  const payments = createPaymentRepository(db, schemas);
+  const addressesOf = (a: { agentId: string; owner: string; agentWallet: string | null }) => ({ agentId: a.agentId, owner: a.owner, wallet: a.agentWallet });
 
   /** Filters shared by the page query and the `total` count (no cursor). */
   function baseFilters(p: ListAgentsParams): Where {
@@ -259,11 +262,18 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
       return {
         items: await (async () => {
           const summaries = pageRows.map((r) => toSummary(p.network, r));
-          const [live, rec] = await Promise.all([
+          const chainId = NETWORKS[p.network].chainId;
+          const [live, rec, pay] = await Promise.all([
             liveness.summaries(summaries.map((a) => a.services)),
-            receipts.providerSummaries(NETWORKS[p.network].chainId, summaries.map((a) => a.agentId)),
+            receipts.providerSummaries(chainId, summaries.map((a) => a.agentId)),
+            payments.summaries(chainId, summaries.map(addressesOf)),
           ]);
-          return summaries.map((a, i) => ({ ...a, liveness: live[i]!, receipts: rec.get(a.agentId) ?? EMPTY_RECEIPT_SUMMARY }));
+          return summaries.map((a, i) => ({
+            ...a,
+            liveness: live[i]!,
+            receipts: rec.get(a.agentId) ?? EMPTY_RECEIPT_SUMMARY,
+            payments: pay.get(a.agentId) ?? EMPTY_PAYMENT_SUMMARY,
+          }));
         })(),
         nextCursor:
           hasMore && last
@@ -343,14 +353,16 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
       }));
 
       const summary = toSummary(network, row);
-      const [endpoints, rec] = await Promise.all([
+      const [endpoints, rec, pay] = await Promise.all([
         liveness.forServices(summary.services),
         receipts.providerSummaries(chainId, [summary.agentId]),
+        payments.summaries(chainId, [addressesOf(summary)]),
       ]);
       return {
         ...summary,
         liveness: liveness.summarize(endpoints),
         receipts: rec.get(summary.agentId) ?? EMPTY_RECEIPT_SUMMARY,
+        payments: pay.get(summary.agentId) ?? EMPTY_PAYMENT_SUMMARY,
         agentUri: truncate(row.agent_uri),
         agentUriTruncated: row.agent_uri.length > URI_PREVIEW_LIMIT,
         metadataError: row.metadata_error,
