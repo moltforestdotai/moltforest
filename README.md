@@ -14,7 +14,7 @@ apps/indexer   Envio HyperIndex (Docker)  ──writes──▶  Postgres schema
 apps/workers   enrichment (host): fetches remote agentURIs ──writes──▶  schema "app"
                                                           │ reads both
 apps/api       Express + TypeScript (host) ◀──────────────┘
-          │  REST: /v1/agents, /v1/sync-status, …
+          │  REST: /v1/agents, /v1/receipts, /v1/sync-status, …
           ▼
 moltforest-web, agents (MCP later)
 ```
@@ -22,11 +22,13 @@ moltforest-web, agents (MCP later)
 | Path | What it is |
 |---|---|
 | `apps/indexer` | Envio indexer for the ERC-8004 registries on both chains. Runs only in Docker: Envio has no Windows build. Not part of the pnpm workspace. |
-| `apps/workers` | Two loops. **Enrichment** fetches registration files behind https/http/ipfs agentURIs (≈97% of agents) into `app.agent_profile`. **Liveness** probes every declared http(s) service endpoint every ~15 min into `app.endpoint_status` and daily uptime roll-ups. Both use SSRF protection, time/size limits and per-host rate limits. |
+| `apps/workers` | Three loops. **Enrichment** fetches registration files behind https/http/ipfs agentURIs (≈97% of agents) into `app.agent_profile`. **Liveness** probes every declared http(s) service endpoint every ~15 min into `app.endpoint_status` and daily uptime roll-ups. Both use SSRF protection, time/size limits and per-host rate limits. **Relay** anchors submitted receipts on the ReceiptRegistry with a testnet-only key (off without `RELAYER_PRIVATE_KEY`). |
 | `apps/api` | Express API. Reads the indexer's tables and the enrichment results; never writes the indexer's tables. |
 | `packages/registration` | Registration-file parser. The indexer gets a byte-identical copy (`pnpm sync:registration`; a test enforces it). |
 | `packages/db` | Drizzle schema and migrations for our own tables (schema `app`). |
-| `packages/chain` | Network config, registry addresses, the reconciler's on-chain agent-count check (Multicall3). |
+| `packages/chain` | Network config, registry addresses, ReceiptRegistry ABI, the reconciler's on-chain agent-count check (Multicall3). |
+| `packages/receipts` | Execution receipts: EIP-712 types, JSON format, hashing, signing, and signature checks that apply exactly the contract's rules. |
+| `contracts` | Foundry project: `ReceiptRegistry` (see [contracts/README.md](contracts/README.md)). Runs in Docker. |
 | `packages/types` | Public API response types. `moltforest-web/src/lib/api-types.ts` mirrors this file. |
 
 ## Deployment
@@ -65,7 +67,7 @@ ENVIO_CONFIG=config.smoke.yaml pnpm indexer:up
 
 The indexer's health endpoint is <http://localhost:9898/healthz>.
 
-### Run the workers (enrichment + liveness)
+### Run the workers (enrichment, liveness, receipt relay)
 
 ```bash
 pnpm dev:workers
@@ -90,15 +92,46 @@ pnpm dev:api                # http://localhost:4000
 | `GET /v1/activity?network=&limit=` | Recent on-chain activity (registrations, registration-file updates, reviews), newest first |
 | `GET /v1/activity/stream?network=` | Server-Sent Events: `activity` as blocks finish indexing, `status` as the indexer advances |
 | `GET /v1/sync-status?network=` | Indexer progress plus a reconciler check of the chain's highest agent id (`missingAgents` > 0 means the index is behind) |
+| `POST /v1/receipts` | Submit a signed execution receipt (see below). `202` when stored, `200` when already known |
+| `GET /v1/receipts/:receiptHash` | One receipt with its signatures, signers and anchoring status |
+| `GET /v1/agents/:network/:agentId/receipts?role=provider\|client\|any&limit=&cursor=` | An agent's receipts, newest first |
 
-All endpoints are free for now and rate-limited per IP. Big integers are strings; there is no single trust score in any response.
+All endpoints are free for now and rate-limited per IP.
+
+### Execution receipts
+
+A receipt says "agent A hired agent B for task T, with this request and result", signed as EIP-712 typed data (`packages/receipts`). Level 1 means the provider signed it; level 2 means the client co-signed it. A receipt is evidence that a job happened, not a proof of what happened (constraint C4).
+
+```json
+POST /v1/receipts
+{
+  "network": "testnet",
+  "receipt": {
+    "taskId": "0x…32 bytes", "clientAgentId": "12", "providerAgentId": "1937",
+    "requestHash": "0x…", "resultHash": "0x…", "paymentRef": "0x…x402 tx hash or zeros",
+    "startedAt": 1790000000, "completedAt": 1790000042, "proofType": 0, "proofRef": "0x…zeros"
+  },
+  "providerSignature": "0x…",
+  "clientSignature": "0x…"
+}
+```
+
+- **Signing domain:** `{ name: "MoltForestReceipts", version: "1", chainId: 10143, verifyingContract: <ReceiptRegistry> }`.
+- **Who signs:** each agent signs with its ERC-8004 agent wallet, or its owner when no wallet is set. The API checks both signatures on-chain before storing, with exactly the contract's rules.
+- **Co-signing later:** posting the same receipt again with `clientSignature` raises it to level 2.
+- **Anchoring:** the relayer anchors stored receipts (`anchor.status`: `queued` → `sending` → `anchored`). Anyone can also call `ReceiptRegistry.anchor` directly.
+- **Limits:** submissions have their own rate limit (`RECEIPT_SUBMIT_PER_MINUTE`). The relayer pays for at most `RECEIPT_RELAY_MAX_PER_AGENT_PER_DAY` new anchors per provider agent.
+- **Networks:** receipts are enabled only where a ReceiptRegistry is deployed (testnet). Elsewhere, submission answers `503 receipts_not_enabled`. Big integers are strings; there is no single trust score in any response.
 
 ## Tests
 
 ```bash
 pnpm typecheck && pnpm test         # API + packages (API integration tests need `pnpm db:up` and the indexer's tables)
 pnpm indexer:typecheck && pnpm indexer:test
+pnpm contracts:test                  # Foundry, in Docker
 ```
+
+The relay end-to-end test runs against a local Anvil chain and is opt-in; see the header of `apps/workers/test/relay.anvil.test.ts`.
 
 After changing `apps/indexer/schema.graphql` or `config.yaml`, run `pnpm indexer:codegen`.
 
