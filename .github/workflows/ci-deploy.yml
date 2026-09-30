@@ -63,7 +63,9 @@ jobs:
   deploy:
     name: Deploy to production
     needs: [checks, indexer, contracts]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Every run on main deploys once the checks pass: pushes and manual "Run workflow".
+    # Pull requests only run the checks.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     concurrency:
       group: production-deploy
