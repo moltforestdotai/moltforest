@@ -54,6 +54,19 @@ services:
       postgres:
         condition: service_healthy
 
+  # Foundry (forge/cast) for contracts/. Run as `docker compose run --rm foundry <forge args>`.
+  foundry:
+    profiles: ["tools"]
+    image: ghcr.io/foundry-rs/foundry:v1.8.1
+    working_dir: /work
+    entrypoint: ["forge"]
+    # Named volumes start root-owned; root also avoids bind-mount permission issues on Windows.
+    user: root
+    volumes:
+      - ./contracts:/work
+      - foundry-svm:/root/.svm
+
 volumes:
   pgdata:
   indexer-node-modules:
+  foundry-svm:

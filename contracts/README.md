@@ -1,0 +1,45 @@
+# Contracts
+
+`ReceiptRegistry` anchors the hashes of execution receipts: EIP-712 typed data signed by ERC-8004 agents (decision D06). It is deployed on Monad testnet only (D05).
+
+| Level | Meaning |
+|---|---|
+| 1 | Signed by the provider agent |
+| 2 | Also co-signed by the client agent |
+
+A receipt is evidence that a job happened, not a proof of what happened. `proofType` and `proofRef` are recorded as the signers' claims and never raise the level (constraint C4).
+
+## How it decides
+
+- **Who signs for an agent:** its ERC-8004 agent wallet (`getAgentWallet`), or its owner when no wallet is set. Both plain accounts and ERC-1271 smart accounts work.
+- **Who may call `anchor`:** anyone; the signatures decide the level. The MoltForest relayer is only a convenience.
+- **Duplicates:** a receipt is identified by its EIP-712 digest, so each receipt can be anchored once. A level-1 receipt can later be raised to level 2 with the client's co-signature. This also defeats front-running a level-2 anchor with a provider-only copy.
+- **Rejected:** client and provider being the same agent, `startedAt` after `completedAt`, unknown agents, and bad signatures. A bad client signature reverts; it is never quietly recorded as level 1.
+- **Storage:** only the level per hash; the full receipt lives in the MoltForest API. The contract has no owner and is not upgradeable.
+
+The TypeScript side lives in `packages/receipts`. A cross-language test vector (`test/ReceiptVector.t.sol` ↔ `packages/receipts/test/vector.test.ts`) keeps the two in step.
+
+## Commands
+
+Foundry runs in Docker (`ghcr.io/foundry-rs/foundry:v1.8.1`); dependencies come from Soldeer (`soldeer.lock`).
+
+```bash
+pnpm contracts:install   # forge soldeer install
+pnpm contracts:test      # forge test -vv
+pnpm contracts:build     # forge build --sizes
+pnpm contracts:abi       # refresh apps/indexer/abis/ReceiptRegistry.json after changing the contract
+```
+
+## Deploy (testnet)
+
+The deployer wallet needs about 0.25 MON (faucet). The key is read from `DEPLOYER_PRIVATE_KEY` in the local `.env`; it is never passed on the command line.
+
+```bash
+scripts/deploy-receipt-registry.sh             # simulate: prints the address it would deploy to
+scripts/deploy-receipt-registry.sh broadcast   # deploy
+```
+
+Then:
+
+1. Set the address and deploy block in `packages/chain/src/networks.ts` (`receiptRegistry`).
+2. Commit `broadcast/DeployReceiptRegistry.s.sol/10143/run-latest.json` as the deployment record.

@@ -31,10 +31,12 @@ apps/indexer/.envio/types.d.ts
 apps/indexer/generated/
 apps/indexer/build/
 
-# Foundry (phase 4)
+# Foundry (dependencies are restored by `forge soldeer install` from contracts/soldeer.lock)
 contracts/out/
 contracts/cache/
 contracts/broadcast/*/31337/
+contracts/broadcast/*/*/dry-run/
+contracts/dependencies/
 
 # editors / OS
 .vscode/

@@ -41,9 +41,28 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
+  contracts:
+    name: Build and test (contracts)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v7
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.1
+      - run: forge soldeer install
+      - run: forge fmt --check
+      - run: forge build --sizes
+      - run: forge test -vv
+      # The indexer and @moltforest/chain use the committed ABI; it must match the contract.
+      - name: Committed ABI matches the contract
+        run: forge inspect src/ReceiptRegistry.sol:ReceiptRegistry abi --json | diff - ../apps/indexer/abis/ReceiptRegistry.json
+
   deploy:
     name: Deploy to production
-    needs: [checks, indexer]
+    needs: [checks, indexer, contracts]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
