@@ -255,7 +255,8 @@ describe("API (integration)", () => {
       const res = await request(app).get("/v1/agents");
       expect(res.status).toBe(200);
       const body = res.body as AgentListResponse;
-      expect(body).toMatchObject({ network: "mainnet", chainId: 143, sort: "newest", includeIncomplete: false, total: 4, totalIndexed: 9 });
+      expect(body).toMatchObject({ network: "mainnet", chainId: 143, sort: "newest", includeIncomplete: false, total: 4, hiddenIncomplete: 5, totalIndexed: 9 });
+      expect(body.filters).toEqual({ payments: null, protocol: null, endpoint: null, minReviewers: null });
       // 8: remote profile kept through an outage · 4: inline · 3: fetched remote profile · 0: inline
       expect(ids(body)).toEqual(["8", "4", "3", "0"]);
       expect(body.items[2]).toMatchObject({
@@ -273,6 +274,7 @@ describe("API (integration)", () => {
       const body = res.body as AgentListResponse;
       expect(ids(body)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7", "8"]);
       expect(body.total).toBe(9);
+      expect(body.hiddenIncomplete).toBeNull();
       const status = Object.fromEntries(body.items.map((a) => [a.agentId, a.metadataStatus]));
       expect(status).toMatchObject({ "2": "empty", "3": "ok", "5": "pending", "6": "pending", "7": "unreachable", "8": "ok" });
       expect(body.items.find((a) => a.agentId === "6")).toMatchObject({ name: null, serviceCount: 0 }); // stale profile not shown
@@ -429,6 +431,59 @@ describe("API (integration)", () => {
       } finally {
         await db!.query(`DELETE FROM "${SCHEMA}".x402_payment`);
       }
+    });
+
+    run("filters the listing by x402 payments, never counting self-payments", async () => {
+      const EXT = "0x00000000000000000000000000000000000000ee";
+      const pay = (n: number, payer: string, payee: string) =>
+        db!.query(
+          `INSERT INTO "${SCHEMA}".x402_payment (chain_id, tx_hash, log_index, block_number, block_time, asset, payer, payee, amount, facilitator)
+           VALUES (143, $1, 1, $2, now(), '0xusdc', $3, $4, 1000000, NULL)`,
+          [`0x${String(n).padStart(64, "0")}`, 6000 + n, payer, payee],
+        );
+      const list = async (query: string) => (await request(app).get(`/v1/agents?${query}`)).body as AgentListResponse;
+      try {
+        await pay(1, OWNER_B, OWNER_B); // agent 3 pays itself
+        expect(ids(await list("payments=any&includeIncomplete=true"))).toEqual([]);
+
+        await pay(2, EXT, OWNER_B); // an outside wallet pays agent 3
+        await pay(3, OWNER_A, EXT); // agents owned by A pay an outside wallet
+        expect(ids(await list("payments=received"))).toEqual(["3"]);
+        const sent = await list("payments=sent");
+        expect(ids(sent)).toEqual(["8", "4", "0"]);
+        expect(sent).toMatchObject({ total: 3, hiddenIncomplete: 5, filters: { payments: "sent", protocol: null } });
+        expect(await list("payments=sent&includeIncomplete=true")).toMatchObject({ total: 8, hiddenIncomplete: null });
+        expect(ids(await list("payments=any"))).toEqual(["8", "4", "3", "0"]);
+        expect(ids(await list("payments=sent&protocol=mcp"))).toEqual(["8"]);
+        expect((await request(app).get("/v1/agents?payments=self")).status).toBe(400);
+      } finally {
+        await db!.query(`DELETE FROM "${SCHEMA}".x402_payment`);
+      }
+    });
+
+    run("filters the listing by protocol, endpoint status and distinct reviewers", async () => {
+      const list = async (query: string) => ids((await request(app).get(`/v1/agents?${query}`)).body as AgentListResponse);
+      // Service names are matched case-insensitively ("MCP", "A2A" in the fixtures).
+      expect(await list("protocol=mcp")).toEqual(["8", "3"]);
+      expect(await list("protocol=a2a")).toEqual(["4", "3", "0"]);
+      expect(await list("protocol=web")).toEqual([]);
+
+      await db!.query(
+        `INSERT INTO "${SCHEMA}".endpoint_status (url, host, status, payment_required, first_checked_at, last_checked_at, next_check_at)
+         VALUES ('https://a4.example', 'a4.example', 'down', false, now(), now(), now())`,
+      );
+      try {
+        expect(await list("endpoint=up")).toEqual(["3"]);
+        expect(await list("endpoint=payment_required")).toEqual(["3"]);
+      } finally {
+        await db!.query(`DELETE FROM "${SCHEMA}".endpoint_status WHERE url = 'https://a4.example'`);
+      }
+
+      expect(await list("minReviewers=3")).toEqual(["0"]);
+      expect(await list("minReviewers=4")).toEqual([]);
+      expect(await list("protocol=a2a&minReviewers=1&sort=oldest")).toEqual(["0"]);
+      expect((await request(app).get("/v1/agents?minReviewers=0")).status).toBe(400);
+      expect((await request(app).get("/v1/agents?protocol=grpc")).status).toBe(400);
     });
 
     run("counts receipts where the agent is the provider, not the client", async () => {

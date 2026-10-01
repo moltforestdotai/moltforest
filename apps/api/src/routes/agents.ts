@@ -13,6 +13,10 @@ export const ListAgentsQuery = z.object({
   network: z.enum(NETWORK_NAMES).default(DEFAULT_NETWORK),
   sort: z.enum(["newest", "oldest", "most_reviewed"]).default("newest"),
   includeIncomplete: boolParam.default(false),
+  payments: z.enum(["any", "received", "sent"]).optional(),
+  protocol: z.enum(["mcp", "a2a", "web", "oasf"]).optional(),
+  endpoint: z.enum(["up", "payment_required"]).optional(),
+  minReviewers: z.coerce.number().int().min(1).max(1000).optional(),
   q: z
     .string()
     .trim()
@@ -51,9 +55,16 @@ export function agentsRouter(repo: AgentRepository): Router {
         chainId: NETWORKS[q.network].chainId,
         sort: q.sort,
         includeIncomplete: q.includeIncomplete,
+        filters: {
+          payments: q.payments ?? null,
+          protocol: q.protocol ?? null,
+          endpoint: q.endpoint ?? null,
+          minReviewers: q.minReviewers ?? null,
+        },
         items: result.items,
         nextCursor: result.nextCursor ? encodeCursor(result.nextCursor) : null,
         total: result.total,
+        hiddenIncomplete: result.hiddenIncomplete,
         totalIndexed: result.totalIndexed,
       };
       res.json(body);

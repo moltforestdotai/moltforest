@@ -1,6 +1,9 @@
 import { agentGlobalId, NETWORKS, type NetworkName } from "@moltforest/chain";
 import type {
   AgentDetail,
+  AgentEndpointFilter,
+  AgentPaymentFilter,
+  AgentProtocolFilter,
   AgentService,
   AgentSort,
   AgentSummary,
@@ -24,6 +27,10 @@ export interface ListAgentsParams {
   sort: AgentSort;
   includeIncomplete: boolean;
   q?: string;
+  payments?: AgentPaymentFilter;
+  protocol?: AgentProtocolFilter;
+  endpoint?: AgentEndpointFilter;
+  minReviewers?: number;
   cursor?: AgentCursor;
   limit: number;
 }
@@ -33,6 +40,8 @@ export interface ListAgentsResult {
   /** The last row of this page, when another page exists. */
   nextCursor: AgentCursor | null;
   total: number;
+  /** Matching agents hidden by the D19 profile rule; null when it is off. */
+  hiddenIncomplete: number | null;
   totalIndexed: number;
 }
 
@@ -158,6 +167,22 @@ class Where {
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
+/** Decision D19: a valid registration file and at least one service. */
+const USABLE = `metadata_status = 'ok' AND service_count > 0`;
+/** The agent's payment addresses (D33): its owner and its agent wallet. */
+const OWN = `lower(agents.owner), lower(coalesce(agents.agent_wallet, agents.owner))`;
+const PAYMENT_SIDES: Record<AgentPaymentFilter, string> = {
+  received: `x.payee IN (${OWN}) AND x.payer NOT IN (${OWN})`,
+  sent: `x.payer IN (${OWN}) AND x.payee NOT IN (${OWN})`,
+  // Either side, but never a payment between the agent's own addresses.
+  any: `(x.payer IN (${OWN}) OR x.payee IN (${OWN})) AND NOT (x.payer IN (${OWN}) AND x.payee IN (${OWN}))`,
+};
+/** True when a declared service (alias `s`) meets `condition`. */
+const anyService = (condition: string, join = "") =>
+  `CASE WHEN jsonb_typeof(agents.services) = 'array'
+        THEN EXISTS (SELECT 1 FROM jsonb_array_elements(agents.services) s ${join} WHERE ${condition})
+        ELSE false END`;
+
 function toServices(value: unknown): AgentService[] {
   if (!Array.isArray(value)) return [];
   return value.filter(
@@ -201,19 +226,25 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
   const agents = effectiveAgents(schemas.indexer, schemas.app);
   const uriChanges = table(schemas.indexer, "AgentUriChange");
   const feedback = table(schemas.indexer, "Feedback");
+  const x402Payments = table(schemas.app, "x402_payment");
+  const endpointStatus = table(schemas.app, "endpoint_status");
   const liveness = createLivenessRepository(db, schemas.app);
   const receipts = createReceiptRepository(db, schemas.app);
   const payments = createPaymentRepository(db, schemas);
   const addressesOf = (a: { agentId: string; owner: string; agentWallet: string | null }) => ({ agentId: a.agentId, owner: a.owner, wallet: a.agentWallet });
 
-  /** Filters shared by the page query and the `total` count (no cursor). */
+  /** Search and filters shared by the page query and the counts: no cursor, and no D19 rule. */
   function baseFilters(p: ListAgentsParams): Where {
     const w = new Where();
     w.add(`chain_id = ${w.param(NETWORKS[p.network].chainId)}`);
-    if (!p.includeIncomplete) {
-      // Decision D19: hide agents without a valid registration file and at least one service.
-      w.add(`metadata_status = 'ok' AND service_count > 0`);
+    if (p.payments) {
+      w.add(`EXISTS (SELECT 1 FROM ${x402Payments} x WHERE x.chain_id = agents.chain_id AND ${PAYMENT_SIDES[p.payments]})`);
     }
+    if (p.protocol) w.add(anyService(`lower(btrim(s->>'name')) = ${w.param(p.protocol)}`));
+    if (p.endpoint) {
+      w.add(anyService(p.endpoint === "up" ? `e.status = 'up'` : `e.payment_required`, `JOIN ${endpointStatus} e ON e.url = s->>'endpoint'`));
+    }
+    if (p.minReviewers) w.add(`unique_reviewer_count >= ${w.param(p.minReviewers)}`);
     if (p.q) {
       if (/^\d{1,78}$/.test(p.q)) {
         w.add(`(agent_id = ${w.param(p.q)}::numeric OR name ILIKE ${w.param(`%${escapeLike(p.q)}%`)})`);
@@ -230,6 +261,7 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
   return {
     async list(p: ListAgentsParams): Promise<ListAgentsResult> {
       const page = baseFilters(p);
+      if (!p.includeIncomplete) page.add(USABLE);
       let orderBy: string;
       switch (p.sort) {
         case "newest":
@@ -250,11 +282,16 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
       const limitParam = page.param(p.limit + 1);
 
       const counts = baseFilters(p);
-      const [rows, total, totalIndexed] = await Promise.all([
+      const [rows, count, totalIndexed] = await Promise.all([
         db.query<AgentRow>(`SELECT ${SUMMARY_COLUMNS} FROM ${agents} ${page.sql()} ORDER BY ${orderBy} LIMIT ${limitParam}`, page.values),
-        db.query<{ count: string }>(`SELECT count(*) FROM ${agents} ${counts.sql()}`, counts.values),
+        db.query<{ matching: string; usable: string }>(
+          `SELECT count(*) AS matching, count(*) FILTER (WHERE ${USABLE}) AS usable FROM ${agents} ${counts.sql()}`,
+          counts.values,
+        ),
         db.query<{ count: string }>(`SELECT count(*) FROM ${agents} WHERE chain_id = $1`, [NETWORKS[p.network].chainId]),
       ]);
+      const matching = Number(count.rows[0]?.matching ?? 0);
+      const usable = Number(count.rows[0]?.usable ?? 0);
 
       const hasMore = rows.rows.length > p.limit;
       const pageRows = hasMore ? rows.rows.slice(0, p.limit) : rows.rows;
@@ -279,7 +316,8 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
           hasMore && last
             ? { sort: p.sort, agentId: last.agent_id, ...(p.sort === "most_reviewed" ? { feedbackCount: last.feedback_count } : {}) }
             : null,
-        total: Number(total.rows[0]?.count ?? 0),
+        total: p.includeIncomplete ? matching : usable,
+        hiddenIncomplete: p.includeIncomplete ? null : matching - usable,
         totalIndexed: Number(totalIndexed.rows[0]?.count ?? 0),
       };
     },

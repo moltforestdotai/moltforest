@@ -24,6 +24,26 @@ export type MetadataStatus = "ok" | "pending" | "invalid" | "unreachable" | "emp
 export type ProfileFetchStatus = "ok" | "invalid" | "too_large" | "unreachable" | "blocked";
 export type AgentSort = "newest" | "oldest" | "most_reviewed";
 
+/**
+ * Listing filters. Each one is an observable fact, not a judgment (C5).
+ * - payments: x402 payments on Monad. `any` = received from others or sent to
+ *   others; self-payments never count.
+ * - protocol: the agent declares a service with this name.
+ * - endpoint: a declared endpoint was up at its last liveness check, or has
+ *   answered 402 Payment Required (an x402 paywall).
+ * - minReviewers: distinct reviewer addresses in the Reputation Registry.
+ */
+export type AgentPaymentFilter = "any" | "received" | "sent";
+export type AgentProtocolFilter = "mcp" | "a2a" | "web" | "oasf";
+export type AgentEndpointFilter = "up" | "payment_required";
+
+export interface AgentListFilters {
+  payments: AgentPaymentFilter | null;
+  protocol: AgentProtocolFilter | null;
+  endpoint: AgentEndpointFilter | null;
+  minReviewers: number | null;
+}
+
 export interface NetworkInfo {
   network: NetworkName;
   chainId: number;
@@ -276,10 +296,16 @@ export interface AgentListResponse {
   chainId: number;
   sort: AgentSort;
   includeIncomplete: boolean;
+  filters: AgentListFilters;
   items: AgentSummary[];
   nextCursor: string | null;
   /** Agents matching the current filters. */
   total: number;
+  /**
+   * Agents that match the search and filters but are hidden because they have
+   * no usable profile (D19). Null when `includeIncomplete` is true.
+   */
+  hiddenIncomplete: number | null;
   /** All indexed agents on this network, including incomplete ones. */
   totalIndexed: number;
 }
