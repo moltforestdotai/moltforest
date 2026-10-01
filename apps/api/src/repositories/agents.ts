@@ -171,11 +171,10 @@ const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 const USABLE = `metadata_status = 'ok' AND service_count > 0`;
 /** The agent's payment addresses (D33): its owner and its agent wallet. */
 const OWN = `lower(agents.owner), lower(coalesce(agents.agent_wallet, agents.owner))`;
-const PAYMENT_SIDES: Record<AgentPaymentFilter, string> = {
+/** Payments with others; one between the agent's own addresses is neither. */
+const PAYMENT_SIDES: Record<Exclude<AgentPaymentFilter, "any">, string> = {
   received: `x.payee IN (${OWN}) AND x.payer NOT IN (${OWN})`,
   sent: `x.payer IN (${OWN}) AND x.payee NOT IN (${OWN})`,
-  // Either side, but never a payment between the agent's own addresses.
-  any: `(x.payer IN (${OWN}) OR x.payee IN (${OWN})) AND NOT (x.payer IN (${OWN}) AND x.payee IN (${OWN}))`,
 };
 /** True when a declared service (alias `s`) meets `condition`. */
 const anyService = (condition: string, join = "") =>
@@ -238,7 +237,11 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
     const w = new Where();
     w.add(`chain_id = ${w.param(NETWORKS[p.network].chainId)}`);
     if (p.payments) {
-      w.add(`EXISTS (SELECT 1 FROM ${x402Payments} x WHERE x.chain_id = agents.chain_id AND ${PAYMENT_SIDES[p.payments]})`);
+      // `any` is two EXISTS, never one with an OR: each EXISTS is a plain index scan, while
+      // an OR of payer and payee needs a bitmap scan and otherwise scans every payment per agent.
+      const sides = p.payments === "any" ? (["received", "sent"] as const) : [p.payments];
+      const exists = sides.map((side) => `EXISTS (SELECT 1 FROM ${x402Payments} x WHERE x.chain_id = agents.chain_id AND ${PAYMENT_SIDES[side]})`);
+      w.add(`(${exists.join(" OR ")})`);
     }
     if (p.protocol) w.add(anyService(`lower(btrim(s->>'name')) = ${w.param(p.protocol)}`));
     if (p.endpoint) {
