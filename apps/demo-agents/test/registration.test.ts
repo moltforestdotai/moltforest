@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { parseAgentUri } from "@moltforest/registration";
-import { emailVerifierRegistration, toDataUri } from "../src/registration.js";
+import { registrationDataUri } from "@moltforest/chain";
+import { emailVerifierRegistration } from "../src/registration.js";
 
 describe("emailVerifierRegistration", () => {
   it("parses cleanly with MoltForest's own registration parser", () => {
     const file = emailVerifierRegistration({ publicUrl: "https://api.moltforest.ai", webUrl: "https://www.moltforest.ai", agentId: 1962n });
-    const parsed = parseAgentUri(toDataUri(file));
+    const parsed = parseAgentUri(registrationDataUri(file));
     expect(parsed).toMatchObject({
       uriKind: "data",
       metadataStatus: "ok",

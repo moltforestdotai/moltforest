@@ -1,5 +1,6 @@
 /**
- * Salted commitments for a receipt's `requestHash` and `resultHash`.
+ * Salted commitments for a receipt's `requestHash` and `resultHash`, shared by
+ * providers (which compute them) and clients (which check them before co-signing).
  *
  *   hash = keccak256(salt ‖ utf8(canonical JSON))
  *

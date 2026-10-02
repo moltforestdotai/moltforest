@@ -177,3 +177,4 @@ export function newTaskId(): Hex {
 }
 
 export * from "./verify.js";
+export * from "./commitments.js";

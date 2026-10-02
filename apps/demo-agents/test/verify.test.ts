@@ -15,9 +15,8 @@ import type { PaymentPayload, PaymentRequirements, SettleResponse, VerifyRespons
 import { decodePaymentResponseHeader, wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { NETWORKS } from "@moltforest/chain";
-import { hashReceipt, parseReceipt, recoverReceiptSigner } from "@moltforest/receipts";
+import { commit, hashReceipt, parseReceipt, recoverReceiptSigner } from "@moltforest/receipts";
 import { createApp } from "../src/app.js";
-import { commit } from "../src/commitments.js";
 import { checkEmail, type MailResolver } from "../src/emailVerifier/checks.js";
 import { EMAIL_VERIFIER_SERVICE } from "../src/emailVerifier/router.js";
 import { createPaywallServer, TESTNET_CAIP2, TESTNET_USDC_EIP712 } from "../src/paywall.js";

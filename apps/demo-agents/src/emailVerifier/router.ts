@@ -12,7 +12,7 @@ import { z } from "zod";
 import type { Address, Hex } from "viem";
 import type { x402HTTPResourceServer } from "@x402/core/server";
 import { NETWORKS } from "@moltforest/chain";
-import { COMMITMENT_SCHEME, commit, newSalt } from "../commitments.js";
+import { COMMITMENT_SCHEME, commit, newSalt } from "@moltforest/receipts";
 import { HttpError } from "../http.js";
 import { payerOf, requestContext, sendInstructions, TESTNET_CAIP2 } from "../paywall.js";
 import { isAgentAddress, type AgentDirectory, type IssuedReceipt, type ReceiptIssuer } from "../receipts.js";
