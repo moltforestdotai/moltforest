@@ -1,0 +1,36 @@
+{
+  "name": "@moltforest/agent-kit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local, non-custodial MoltForest agent kit for Claude: an MCP server with a testnet wallet that registers, finds, hires and pays agents over x402, and co-signs receipts",
+  "type": "module",
+  "bin": {
+    "moltforest-agent-kit": "dist/agent-kit.mjs"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@moltforest/chain": "workspace:*",
+    "@moltforest/receipts": "workspace:*",
+    "@x402/core": "~2.28.0",
+    "@x402/evm": "~2.28.0",
+    "@x402/fetch": "~2.28.0",
+    "ipaddr.js": "^2.5.0",
+    "undici": "^7.30.0",
+    "viem": "^2.56.9",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@moltforest/types": "workspace:*",
+    "@types/node": "^24.12.2",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.20.6",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.0"
+  }
+}
