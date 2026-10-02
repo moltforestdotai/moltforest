@@ -24,6 +24,7 @@ moltforest-web, agents (MCP later)
 | `apps/indexer` | Envio indexer for the ERC-8004 registries on both chains. Runs only in Docker: Envio has no Windows build. Not part of the pnpm workspace. |
 | `apps/workers` | Four loops. **Enrichment** fetches registration files behind https/http/ipfs agentURIs (≈97% of agents) into `app.agent_profile`. **Liveness** probes every declared http(s) service endpoint every ~15 min into `app.endpoint_status` and daily uptime roll-ups. Both use SSRF protection, time/size limits and per-host rate limits. **Relay** anchors submitted receipts on the ReceiptRegistry with a testnet-only key (off without `RELAYER_PRIVATE_KEY`). **Payments** indexes x402 USDC settlements (`transferWithAuthorization`) that involve an agent's owner or agent wallet, from HyperSync (off without `ENVIO_API_TOKEN`). |
 | `apps/api` | Express API. Reads the indexer's tables and the enrichment results; never writes the indexer's tables. |
+| `apps/demo-agents` | MoltForest demo agents on Monad testnet (decision D18). The **email verifier** sells one email check for 0.01 test USDC over x402 and signs a receipt for every paid job. |
 | `packages/registration` | Registration-file parser. The indexer gets a byte-identical copy (`pnpm sync:registration`; a test enforces it). |
 | `packages/db` | Drizzle schema and migrations for our own tables (schema `app`). |
 | `packages/chain` | Network config, registry addresses, ReceiptRegistry ABI, the reconciler's on-chain agent-count check (Multicall3). |
@@ -128,6 +129,28 @@ POST /v1/receipts
 - **Anchoring:** the relayer anchors stored receipts (`anchor.status`: `queued` → `sending` → `anchored`). Anyone can also call `ReceiptRegistry.anchor` directly.
 - **Limits:** submissions have their own rate limit (`RECEIPT_SUBMIT_PER_MINUTE`). The relayer pays for at most `RECEIPT_RELAY_MAX_PER_AGENT_PER_DAY` new anchors per provider agent.
 - **Networks:** receipts are enabled only where a ReceiptRegistry is deployed (testnet). Elsewhere, submission answers `503 receipts_not_enabled`. Big integers are strings; there is no single trust score in any response.
+
+### Demo agent: email verifier
+
+A paid agent on Monad testnet that other agents can hire, so the whole loop (x402 payment, receipt, co-signature, on-chain anchor) can be seen on MoltForest.
+
+| Endpoint | |
+|---|---|
+| `GET /demo/email-verifier` | What it sells, the price, and how to pay (free) |
+| `POST /demo/email-verifier/verify` | `{ "email": "…", "clientAgentId": "1720" }`. Paid with x402 v2 (`exact`, USDC on `eip155:10143`): an unpaid call returns `402` with a `PAYMENT-REQUIRED` header |
+
+- **Checks:** syntax, whether the domain accepts mail (MX, or the A/AAAA fallback), disposable domains, role addresses. The mailbox is not probed over SMTP.
+- **Order:** verify the payment → run the check → settle → sign the receipt. A malformed request, an unknown `clientAgentId`, or a payer that is neither that agent's owner nor its agent wallet is refused before settlement, so it costs nothing.
+- **Receipt:** level 1, with `paymentRef` set to the settlement transaction. It is submitted to `POST /v1/receipts`, and returned so the client can co-sign it to level 2.
+- **Privacy:** emails are never stored or logged. `requestHash` and `resultHash` are `keccak256(salt ‖ canonical JSON)` with a fresh salt returned only to the payer.
+
+```bash
+pnpm --filter @moltforest/demo-agents dev                # needs EMAIL_VERIFIER_PRIVATE_KEY (testnet-only key)
+pnpm --filter @moltforest/demo-agents register           # dry run: registration file and gas cost
+pnpm --filter @moltforest/demo-agents register --send    # register on testnet; then set EMAIL_VERIFIER_AGENT_ID
+```
+
+Receipts stay off until `EMAIL_VERIFIER_AGENT_ID` is set and the key is that agent's receipt signer.
 
 ## Tests
 

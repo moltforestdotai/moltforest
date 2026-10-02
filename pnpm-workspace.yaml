@@ -3,6 +3,7 @@
 packages:
   - apps/api
   - apps/workers
+  - apps/demo-agents
   - packages/*
 
 allowBuilds:
