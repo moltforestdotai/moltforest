@@ -60,12 +60,32 @@ export interface AgentService {
   version?: string;
 }
 
+/**
+ * Why a review is not counted (decision D31). Neutral observations with
+ * evidence, never accusations (constraint C5): reviews are not hidden.
+ * - SELF_REVIEW: the reviewer is the agent's owner or agent wallet.
+ * - FUNDED_BY_TARGET: the reviewer wallet was funded by the agent's owner or agent wallet (directly or through a linked wallet).
+ * - REPEAT_REVIEWER: the same wallet already has a counted review of this agent within the repeat window.
+ * - COORDINATED_CLUSTER: the reviewer shares a funder with a wallet whose review already counts; a cluster counts as one reviewer.
+ */
+export type ReviewExclusionReason = "SELF_REVIEW" | "FUNDED_BY_TARGET" | "REPEAT_REVIEWER" | "COORDINATED_CLUSTER";
+
 export interface AgentReputationSummary {
   /** Active (non-revoked) feedback entries on the ERC-8004 Reputation Registry. */
   feedbackCount: number;
   revokedFeedbackCount: number;
   uniqueReviewerCount: number;
   lastFeedbackAt: string | null;
+  /** Counted numbers after the D31 checks, next to the totals above; null until assessed. */
+  counted: {
+    reviews: number;
+    reviewers: number;
+    /** Not-counted reviews by reason. */
+    notCounted: Partial<Record<ReviewExclusionReason, number>>;
+    /** Reviewer wallets whose funding is not looked up yet; their reviews count for now. */
+    pendingReviewers: number;
+    assessedAt: string;
+  } | null;
 }
 
 /** Liveness roll-up over the agent's declared http(s) service endpoints. */
@@ -229,6 +249,10 @@ export interface FeedbackEntry {
   blockNumber: string;
   timestamp: string;
   txHash: string;
+  /** Whether this review counts (D31); null for revoked reviews or before assessment. */
+  counted: boolean | null;
+  /** Why it does not count, with on-chain evidence (e.g. funder and funding tx). */
+  notCounted: { reason: ReviewExclusionReason; evidence: Record<string, unknown> | null } | null;
 }
 
 export interface AgentDetail extends AgentSummary {

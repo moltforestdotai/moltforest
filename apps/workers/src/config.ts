@@ -72,6 +72,13 @@ const EnvSchema = z.object({
   HYPERSYNC_URL_TEMPLATE: z.string().default("https://{chainId}.hypersync.xyz"),
   PAYMENTS_ENABLED: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
   PAYMENTS_POLL_SECONDS: z.coerce.number().int().min(30).default(300),
+  // --- Review assessment (decision D31; HyperSync for reviewer funding) ---
+  REVIEWS_ENABLED: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
+  REVIEWS_POLL_SECONDS: z.coerce.number().int().min(30).default(300),
+  /** A funder whose wallets reviewed at least this many agents is a hub (faucet, exchange) and links nothing. */
+  REVIEWS_HUB_MIN_AGENTS: z.coerce.number().int().min(2).default(10),
+  /** A wallet's later review of the same agent counts again after this many days. */
+  REVIEWS_REPEAT_WINDOW_DAYS: z.coerce.number().int().min(1).default(30),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 

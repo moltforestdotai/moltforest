@@ -223,3 +223,70 @@ export const agentProfileSnapshot = app.table(
   },
   (t) => [primaryKey({ columns: [t.chainId, t.agentId, t.contentHash] })],
 );
+
+/**
+ * How each reviewer wallet was first funded (decision D31): its first incoming
+ * MON transfer, found with HyperSync. Funding links reviewers to each other and
+ * to the agents they review; the funding tx is the provenance shown with every
+ * review that is not counted.
+ */
+export const walletFunding = app.table(
+  "wallet_funding",
+  {
+    chainId: integer("chain_id").notNull(),
+    address: text("address").notNull(),
+    /** pending: not looked up yet; found: funder known; none: no incoming MON transfer (e.g. funded by a contract). */
+    status: text("status").notNull().default("pending"),
+    funder: text("funder"),
+    fundingTx: text("funding_tx"),
+    fundingBlock: bigint("funding_block", { mode: "number" }),
+    /** Wei. */
+    fundingValue: numeric("funding_value", { precision: 78, scale: 0, mode: "string" }),
+    /** First transfer of MON from this wallet back to its funder, if any. */
+    sweepTx: text("sweep_tx"),
+    /** Transactions this wallet sent, up to `checkedBlock`. */
+    sentTxCount: integer("sent_tx_count"),
+    checkedBlock: bigint("checked_block", { mode: "number" }),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.chainId, t.address] }), index("wallet_funding_pending_idx").on(t.chainId).where(sql`status = 'pending'`)],
+);
+
+/** Why a review is not counted (decision D31). Raw reviews are never hidden or deleted. */
+export type ReviewExclusion = "SELF_REVIEW" | "FUNDED_BY_TARGET" | "REPEAT_REVIEWER" | "COORDINATED_CLUSTER";
+
+/** One row per non-revoked review: counted or not, with a neutral reason and its evidence. */
+export const reviewAssessment = app.table(
+  "review_assessment",
+  {
+    chainId: integer("chain_id").notNull(),
+    agentId: numeric("agent_id", { precision: 78, scale: 0, mode: "string" }).notNull(),
+    client: text("client").notNull(),
+    feedbackIndex: numeric("feedback_index", { precision: 78, scale: 0, mode: "string" }).notNull(),
+    counted: boolean("counted").notNull(),
+    reason: text("reason").$type<ReviewExclusion>(),
+    /** e.g. { funder, fundingTx, clusterSize, sweepTx } */
+    evidence: jsonb("evidence"),
+  },
+  (t) => [primaryKey({ columns: [t.chainId, t.agentId, t.client, t.feedbackIndex] })],
+);
+
+/** Counted review numbers per agent, next to the raw totals (decision D31, constraint C1). */
+export const agentReviewSummary = app.table(
+  "agent_review_summary",
+  {
+    chainId: integer("chain_id").notNull(),
+    agentId: numeric("agent_id", { precision: 78, scale: 0, mode: "string" }).notNull(),
+    countedReviews: integer("counted_reviews").notNull(),
+    countedReviewers: integer("counted_reviewers").notNull(),
+    /** Not-counted reviews by reason, e.g. { "FUNDED_BY_TARGET": 7665 }. */
+    excluded: jsonb("excluded").$type<Partial<Record<ReviewExclusion, number>>>().notNull(),
+    /** Reviewer wallets whose funding is not looked up yet; counts can still drop while this is above zero. */
+    pendingReviewers: integer("pending_reviewers").notNull(),
+    /** Hash of this agent's review labels, so an unchanged assessment is not rewritten. */
+    assessmentHash: text("assessment_hash").notNull(),
+    assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.chainId, t.agentId] })],
+);

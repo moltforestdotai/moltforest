@@ -75,7 +75,7 @@ async function setup(): Promise<void> {
   for (const t of ["Agent", "AgentUriChange", "Feedback", "envio_chains"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE envio."${t}" INCLUDING DEFAULTS)`);
   }
-  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt", "x402_payment"]) {
+  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt", "x402_payment", "agent_review_summary", "review_assessment"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE app."${t}" INCLUDING ALL)`);
   }
 
@@ -184,6 +184,16 @@ async function setup(): Promise<void> {
       [`0_${OWNER_B}_${i}`, OWNER_B, i, "0x" + "00".repeat(32), i === 2, block, new Date(Date.UTC(2026, 1, i)), "0x" + "ef".repeat(32)],
     );
   }
+  // D31 assessment of agent 0's one non-revoked review.
+  await db.query(
+    `INSERT INTO ${s}."agent_review_summary" (chain_id, agent_id, counted_reviews, counted_reviewers, excluded, pending_reviewers, assessment_hash, assessed_at)
+     VALUES (143, 0, 0, 0, '{"SELF_REVIEW": 1}', 0, 'h', '2026-10-03T00:00:00Z')`,
+  );
+  await db.query(
+    `INSERT INTO ${s}."review_assessment" (chain_id, agent_id, client, feedback_index, counted, reason, evidence)
+     VALUES (143, 0, lower($1), 1, false, 'SELF_REVIEW', $2::jsonb)`,
+    [OWNER_B, JSON.stringify({ reviewer: OWNER_B.toLowerCase(), role: "owner" })],
+  );
   await db.query(
     `INSERT INTO ${s}."envio_chains" (id, ecosystem, start_block, max_reorg_depth, buffer_block, source_block, ready_at,
        events_processed, _is_hyper_sync, progress_block, progress_block_time, checkpoint_id)
@@ -356,6 +366,21 @@ describe("API (integration)", () => {
         ["2", true, "-25", 1],
         ["1", false, "-25", 1],
       ]);
+
+      // D31: counted numbers next to the totals, and a neutral reason per review that does not count.
+      expect(withFeedback.reputation.counted).toEqual({
+        reviews: 0,
+        reviewers: 0,
+        notCounted: { SELF_REVIEW: 1 },
+        pendingReviewers: 0,
+        assessedAt: "2026-10-03T00:00:00.000Z",
+      });
+      expect(withFeedback.recentFeedback.map((f) => [f.feedbackIndex, f.counted, f.notCounted?.reason ?? null])).toEqual([
+        ["2", null, null],
+        ["1", false, "SELF_REVIEW"],
+      ]);
+      expect(withFeedback.recentFeedback[1]!.notCounted?.evidence).toEqual({ reviewer: OWNER_B.toLowerCase(), role: "owner" });
+      expect((await detail(4)).reputation.counted).toBeNull();
     });
 
     run("404s for unknown agents and routes", async () => {

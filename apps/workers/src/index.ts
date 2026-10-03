@@ -4,6 +4,7 @@
  * - liveness:   probes declared http(s) service endpoints into app.endpoint_status
  * - relay:      anchors submitted receipts (app.receipt) on the ReceiptRegistry
  * - payments:   indexes x402 USDC settlements touching agent addresses (app.x402_payment)
+ * - reviews:    looks up reviewer funding and decides which reviews count (app.agent_review_summary)
  */
 import { pino, type Logger } from "pino";
 import { createPool } from "@moltforest/db";
@@ -21,6 +22,8 @@ import { runAnchorBatch } from "./anchor/runner.js";
 import { createHyperSync } from "./payments/hypersync.js";
 import { createPaymentRepository } from "./payments/repository.js";
 import { runPaymentsTick } from "./payments/runner.js";
+import { createReviewRepository } from "./reviews/repository.js";
+import { runReviewsTick } from "./reviews/runner.js";
 
 const config = loadConfig();
 const logger = pino({ level: config.LOG_LEVEL });
@@ -134,6 +137,31 @@ const payments = () => {
   });
 };
 
+/** One reviews loop per network (decision D31); off without a HyperSync token. */
+const reviews = () => {
+  const log = logger.child({ worker: "reviews" });
+  if (!config.REVIEWS_ENABLED) return [];
+  if (!config.ENVIO_API_TOKEN) {
+    log.info("review assessment off: ENVIO_API_TOKEN is not set");
+    return [];
+  }
+  const hs = createHyperSync({ token: config.ENVIO_API_TOKEN, urlTemplate: config.HYPERSYNC_URL_TEMPLATE, logger: log });
+  const repo = createReviewRepository(db, schemas);
+  return NETWORK_NAMES.map((name) => {
+    const network = NETWORKS[name];
+    const netLog = log.child({ network: name });
+    return loop(`reviews:${name}`, netLog, config.REVIEWS_POLL_SECONDS * 1000, async () => {
+      const stats = await runReviewsTick(
+        { repo, hs, logger: netLog },
+        { chainId: network.chainId, hubMinAgents: config.REVIEWS_HUB_MIN_AGENTS, repeatWindowDays: config.REVIEWS_REPEAT_WINDOW_DAYS },
+      );
+      // Funding lookups left: run again soon instead of waiting a full poll interval.
+      const more = (await repo.pendingWallets(network.chainId, 1)).length > 0;
+      return { selected: stats.fundingLookedUp + stats.agentsChanged, full: more, stats };
+    });
+  });
+};
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     logger.info(`${signal} received; finishing current batches`);
@@ -141,5 +169,5 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-await Promise.all([enrichment(), config.LIVENESS_ENABLED ? liveness() : Promise.resolve(), ...relays(), ...payments()]);
+await Promise.all([enrichment(), config.LIVENESS_ENABLED ? liveness() : Promise.resolve(), ...relays(), ...payments(), ...reviews()]);
 await db.end();

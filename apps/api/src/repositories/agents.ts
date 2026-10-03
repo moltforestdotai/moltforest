@@ -10,6 +10,7 @@ import type {
   AgentUriHistoryEntry,
   FeedbackEntry,
   MetadataStatus,
+  ReviewExclusionReason,
   ProfileFetchStatus,
   UriKind,
 } from "@moltforest/types";
@@ -66,6 +67,11 @@ const SUMMARY_COLUMNS = [
   "revoked_feedback_count",
   "unique_reviewer_count",
   "last_feedback_at",
+  "reviews_counted",
+  "reviewers_counted",
+  "reviews_not_counted",
+  "reviewers_pending",
+  "reviews_assessed_at",
 ].join(", ");
 
 interface AgentRow {
@@ -89,6 +95,12 @@ interface AgentRow {
   revoked_feedback_count: number;
   unique_reviewer_count: number;
   last_feedback_at: Date | null;
+  /** D31 assessment; null until the reviews worker has assessed the agent. */
+  reviews_counted: number | null;
+  reviewers_counted: number | null;
+  reviews_not_counted: Partial<Record<ReviewExclusionReason, number>> | null;
+  reviewers_pending: number | null;
+  reviews_assessed_at: Date | null;
 }
 
 interface AgentDetailRow extends AgentRow {
@@ -142,9 +154,12 @@ function effectiveAgents(indexerSchema: string, appSchema: string): string {
            CASE WHEN p.uri = a.agent_uri THEN p.fetched_at END AS profile_fetched_at,
            CASE WHEN p.uri = a.agent_uri THEN p.last_ok_at END AS profile_last_ok_at,
            CASE WHEN p.uri = a.agent_uri THEN p.next_fetch_at END AS profile_next_fetch_at,
-           p.change_count AS profile_change_count
+           p.change_count AS profile_change_count,
+           rs.counted_reviews AS reviews_counted, rs.counted_reviewers AS reviewers_counted,
+           rs.excluded AS reviews_not_counted, rs.pending_reviewers AS reviewers_pending, rs.assessed_at AS reviews_assessed_at
       FROM ${table(indexerSchema, "Agent")} a
       LEFT JOIN ${table(appSchema, "agent_profile")} p ON p.chain_id = a.chain_id AND p.agent_id = a.agent_id
+      LEFT JOIN ${table(appSchema, "agent_review_summary")} rs ON rs.chain_id = a.chain_id AND rs.agent_id = a.agent_id
   ) AS agents`;
 }
 
@@ -215,6 +230,16 @@ function toSummary(network: NetworkName, row: AgentRow): Omit<AgentSummary, "liv
       revokedFeedbackCount: row.revoked_feedback_count,
       uniqueReviewerCount: row.unique_reviewer_count,
       lastFeedbackAt: row.last_feedback_at?.toISOString() ?? null,
+      counted:
+        row.reviews_assessed_at === null || row.reviews_counted === null
+          ? null
+          : {
+              reviews: row.reviews_counted,
+              reviewers: row.reviewers_counted ?? 0,
+              notCounted: row.reviews_not_counted ?? {},
+              pendingReviewers: row.reviewers_pending ?? 0,
+              assessedAt: row.reviews_assessed_at.toISOString(),
+            },
     },
   };
 }
@@ -225,6 +250,7 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
   const agents = effectiveAgents(schemas.indexer, schemas.app);
   const uriChanges = table(schemas.indexer, "AgentUriChange");
   const feedback = table(schemas.indexer, "Feedback");
+  const reviewAssessment = table(schemas.app, "review_assessment");
   const x402Payments = table(schemas.app, "x402_payment");
   const endpointStatus = table(schemas.app, "endpoint_status");
   const liveness = createLivenessRepository(db, schemas.app);
@@ -359,11 +385,17 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
           block_number: string;
           timestamp: Date;
           tx_hash: string;
+          counted: boolean | null;
+          reason: ReviewExclusionReason | null;
+          evidence: Record<string, unknown> | null;
         }>(
-          `SELECT client, feedback_index, value, value_decimals, tag1, tag2, endpoint, feedback_uri, feedback_hash,
-                  revoked, response_count, block_number, "timestamp", tx_hash
-             FROM ${feedback} WHERE chain_id = $1 AND agent_id = $2
-            ORDER BY block_number DESC, id DESC LIMIT ${HISTORY_LIMIT}`,
+          `SELECT f.client, f.feedback_index, f.value, f.value_decimals, f.tag1, f.tag2, f.endpoint, f.feedback_uri, f.feedback_hash,
+                  f.revoked, f.response_count, f.block_number, f."timestamp", f.tx_hash, ra.counted, ra.reason, ra.evidence
+             FROM ${feedback} f
+             LEFT JOIN ${reviewAssessment} ra
+               ON ra.chain_id = f.chain_id AND ra.agent_id = f.agent_id::numeric AND ra.client = lower(f.client) AND ra.feedback_index = f.feedback_index
+            WHERE f.chain_id = $1 AND f.agent_id = $2
+            ORDER BY f.block_number DESC, f.id DESC LIMIT ${HISTORY_LIMIT}`,
           [chainId, agentId],
         ),
       ]);
@@ -391,6 +423,8 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
         blockNumber: f.block_number,
         timestamp: f.timestamp.toISOString(),
         txHash: f.tx_hash,
+        counted: f.counted,
+        notCounted: f.counted === false && f.reason ? { reason: f.reason, evidence: f.evidence } : null,
       }));
 
       const summary = toSummary(network, row);
