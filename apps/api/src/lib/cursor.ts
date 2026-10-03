@@ -4,12 +4,12 @@ import { HttpError } from "./errors.js";
 /**
  * Keyset-pagination cursor. Opaque to clients (base64url JSON).
  * - newest / oldest:  { agentId }
- * - most_reviewed:    { agentId, feedbackCount }
+ * - most_reviewed:    { agentId, reviewCount } (counted reviews, D31)
  */
 export interface AgentCursor {
   sort: AgentSort;
   agentId: string;
-  feedbackCount?: number;
+  reviewCount?: number;
 }
 
 export function encodeCursor(cursor: AgentCursor): string {
@@ -30,7 +30,7 @@ export function decodeCursor(raw: string, expectedSort: AgentSort): AgentCursor 
     c.sort !== expectedSort ||
     typeof c.agentId !== "string" ||
     !/^\d{1,78}$/.test(c.agentId) ||
-    (expectedSort === "most_reviewed" && (!Number.isInteger(c.feedbackCount) || (c.feedbackCount as number) < 0))
+    (expectedSort === "most_reviewed" && (!Number.isInteger(c.reviewCount) || (c.reviewCount as number) < 0))
   ) {
     throw new HttpError(400, "invalid_cursor", "cursor does not match this query");
   }

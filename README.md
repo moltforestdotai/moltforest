@@ -89,11 +89,11 @@ pnpm dev:api                # http://localhost:4000
 |---|---|
 | `GET /health` | API and database health |
 | `GET /v1/networks` | Supported networks (mainnet is the default) |
-| `GET /v1/agents?network=&sort=newest\|oldest\|most_reviewed&q=&includeIncomplete=&limit=&cursor=` | Agent listing. Hides agents without a valid registration file and at least one service unless `includeIncomplete=true`; `hiddenIncomplete` counts the matching agents it hid |
+| `GET /v1/agents?network=&sort=newest\|oldest\|most_reviewed&q=&includeIncomplete=&limit=&cursor=` | Agent listing. Hides agents without a valid registration file and at least one service unless `includeIncomplete=true`; `hiddenIncomplete` counts the matching agents it hid. `most_reviewed` sorts by counted reviews (D31) |
 | &nbsp;&nbsp;filters: `payments=any\|received\|sent` | x402 payments on Monad by the agent's owner or agent wallet. `any` is received from others or sent to others; self-payments never count |
 | &nbsp;&nbsp;`protocol=mcp\|a2a\|web\|oasf` | The registration file declares a service with that name (case-insensitive) |
 | &nbsp;&nbsp;`endpoint=up\|payment_required` | A declared endpoint was up at its last liveness check, or has answered 402 Payment Required |
-| &nbsp;&nbsp;`minReviewers=1..1000` | At least this many distinct reviewer addresses |
+| &nbsp;&nbsp;`minReviewers=1..1000` | At least this many counted reviewers (D31; the distinct reviewer count until an agent is assessed) |
 | `GET /v1/agents/:network/:agentId` | Agent detail: registration file and fetch status, per-endpoint liveness, URI history, recent feedback |
 | `GET /v1/activity?network=&limit=` | Recent on-chain activity (registrations, registration-file updates, reviews), newest first |
 | `GET /v1/activity/stream?network=` | Server-Sent Events: `activity` as blocks finish indexing, `status` as the indexer advances |

@@ -182,6 +182,10 @@ class Where {
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
+/** Reviews and reviewers that count (D31); the raw totals until an agent is assessed. */
+const COUNTED_REVIEWS = "coalesce(reviews_counted, feedback_count)";
+const COUNTED_REVIEWERS = "coalesce(reviewers_counted, unique_reviewer_count)";
+
 /** Decision D19: a valid registration file and at least one service. */
 const USABLE = `metadata_status = 'ok' AND service_count > 0`;
 /** The agent's payment addresses (D33): its owner and its agent wallet. */
@@ -273,7 +277,7 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
     if (p.endpoint) {
       w.add(anyService(p.endpoint === "up" ? `e.status = 'up'` : `e.payment_required`, `JOIN ${endpointStatus} e ON e.url = s->>'endpoint'`));
     }
-    if (p.minReviewers) w.add(`unique_reviewer_count >= ${w.param(p.minReviewers)}`);
+    if (p.minReviewers) w.add(`${COUNTED_REVIEWERS} >= ${w.param(p.minReviewers)}`);
     if (p.q) {
       if (/^\d{1,78}$/.test(p.q)) {
         w.add(`(agent_id = ${w.param(p.q)}::numeric OR name ILIKE ${w.param(`%${escapeLike(p.q)}%`)})`);
@@ -303,9 +307,9 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
           break;
         case "most_reviewed":
           if (p.cursor) {
-            page.add(`(feedback_count, agent_id) < (${page.param(p.cursor.feedbackCount)}::int, ${page.param(p.cursor.agentId)}::numeric)`);
+            page.add(`(${COUNTED_REVIEWS}, agent_id) < (${page.param(p.cursor.reviewCount)}::int, ${page.param(p.cursor.agentId)}::numeric)`);
           }
-          orderBy = "feedback_count DESC, agent_id DESC";
+          orderBy = `${COUNTED_REVIEWS} DESC, agent_id DESC`;
           break;
       }
       const limitParam = page.param(p.limit + 1);
@@ -343,7 +347,7 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
         })(),
         nextCursor:
           hasMore && last
-            ? { sort: p.sort, agentId: last.agent_id, ...(p.sort === "most_reviewed" ? { feedbackCount: last.feedback_count } : {}) }
+            ? { sort: p.sort, agentId: last.agent_id, ...(p.sort === "most_reviewed" ? { reviewCount: last.reviews_counted ?? last.feedback_count } : {}) }
             : null,
         total: p.includeIncomplete ? matching : usable,
         hiddenIncomplete: p.includeIncomplete ? null : matching - usable,

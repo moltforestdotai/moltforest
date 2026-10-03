@@ -313,7 +313,8 @@ describe("API (integration)", () => {
         seen.push(...ids(res.body));
         cursor = res.body.nextCursor;
       } while (cursor);
-      expect(seen).toEqual(["4", "3", "0", "8"]);
+      // Counted reviews (D31): agent 0 has 5 raw reviews but none counts; unassessed agents use their raw totals.
+      expect(seen).toEqual(["4", "3", "8", "0"]);
     });
 
     run("searches by name with LIKE wildcards escaped, by id and by owner", async () => {
@@ -504,9 +505,16 @@ describe("API (integration)", () => {
         await db!.query(`DELETE FROM "${SCHEMA}".endpoint_status WHERE url = 'https://a4.example'`);
       }
 
-      expect(await list("minReviewers=3")).toEqual(["0"]);
-      expect(await list("minReviewers=4")).toEqual([]);
-      expect(await list("protocol=a2a&minReviewers=1&sort=oldest")).toEqual(["0"]);
+      // Counted reviewers (D31): agent 0 has 3 reviewer wallets, but its assessment counts none of them.
+      expect(await list("minReviewers=1")).toEqual([]);
+      await db!.query(`UPDATE "${SCHEMA}".agent_review_summary SET counted_reviewers = 3 WHERE chain_id = 143 AND agent_id = 0`);
+      try {
+        expect(await list("minReviewers=3")).toEqual(["0"]);
+        expect(await list("minReviewers=4")).toEqual([]);
+        expect(await list("protocol=a2a&minReviewers=1&sort=oldest")).toEqual(["0"]);
+      } finally {
+        await db!.query(`UPDATE "${SCHEMA}".agent_review_summary SET counted_reviewers = 0 WHERE chain_id = 143 AND agent_id = 0`);
+      }
       expect((await request(app).get("/v1/agents?minReviewers=0")).status).toBe(400);
       expect((await request(app).get("/v1/agents?protocol=grpc")).status).toBe(400);
     });

@@ -4,7 +4,7 @@ import { HttpError } from "../src/lib/errors.js";
 
 describe("agent cursor", () => {
   it("round-trips", () => {
-    const c = { sort: "most_reviewed" as const, agentId: "42", feedbackCount: 7 };
+    const c = { sort: "most_reviewed" as const, agentId: "42", reviewCount: 7 };
     expect(decodeCursor(encodeCursor(c), "most_reviewed")).toEqual(c);
   });
 
@@ -19,7 +19,7 @@ describe("agent cursor", () => {
     expect(() => decodeCursor(evil, "newest")).toThrow(HttpError);
   });
 
-  it("requires feedbackCount for most_reviewed", () => {
+  it("requires reviewCount for most_reviewed", () => {
     const raw = encodeCursor({ sort: "most_reviewed", agentId: "1" });
     expect(() => decodeCursor(raw, "most_reviewed")).toThrow(HttpError);
   });
