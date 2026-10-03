@@ -18,6 +18,7 @@ import type {
   AgentReceiptsResponse,
   PaymentLookupResponse,
   ReceiptView,
+  RecentReceiptsResponse,
   SyncStatus,
 } from "@moltforest/types";
 import { loadConfig } from "../src/config.js";
@@ -576,6 +577,14 @@ describe("API (integration)", () => {
 
         const list = (await request(app).get("/v1/agents/mainnet/4/receipts")).body as AgentReceiptsResponse;
         expect(Object.fromEntries(list.items.map((i) => [i.receiptHash, i.payment?.txHash ?? null]))).toEqual({ [linked]: tx, [unpaid]: null });
+
+        // The newest receipts on a network, across agents, paged.
+        const first = (await request(app).get("/v1/receipts?network=mainnet&limit=1")).body as RecentReceiptsResponse;
+        expect(first.items).toHaveLength(1);
+        expect(first.nextCursor).toEqual(expect.any(String));
+        const second = (await request(app).get(`/v1/receipts?network=mainnet&limit=1&cursor=${first.nextCursor}`)).body as RecentReceiptsResponse;
+        expect(new Set([first.items[0]!.receiptHash, second.items[0]!.receiptHash])).toEqual(new Set([linked, unpaid]));
+        expect(((await request(app).get("/v1/receipts?network=testnet")).body as RecentReceiptsResponse).items).toEqual([]);
       } finally {
         await db!.query(`DELETE FROM "${SCHEMA}".receipt`);
         await db!.query(`DELETE FROM "${SCHEMA}".x402_payment`);

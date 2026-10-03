@@ -143,29 +143,34 @@ export function createReceiptRepository(db: Db, appSchema: string) {
       return out;
     },
 
-    async listForAgent(params: {
+    /** Newest first: one agent's receipts in a role, or every receipt on the chain when `agentId` is absent. */
+    async list(params: {
       chainId: number;
-      agentId: string;
+      agentId?: string;
       role: ReceiptRole;
       limit: number;
       cursor?: ReceiptCursor;
     }): Promise<{ rows: ReceiptRow[]; nextCursor: ReceiptCursor | null }> {
-      const values: unknown[] = [params.chainId, params.agentId];
-      const role =
-        params.role === "provider"
-          ? "provider_agent_id = $2"
-          : params.role === "client"
-            ? "client_agent_id = $2"
-            : "(provider_agent_id = $2 OR client_agent_id = $2)";
+      const values: unknown[] = [params.chainId];
+      let role = "";
+      if (params.agentId !== undefined) {
+        values.push(params.agentId);
+        role =
+          params.role === "provider"
+            ? "AND provider_agent_id = $2"
+            : params.role === "client"
+              ? "AND client_agent_id = $2"
+              : "AND (provider_agent_id = $2 OR client_agent_id = $2)";
+      }
       let after = "";
       if (params.cursor) {
         values.push(params.cursor.submittedAt, params.cursor.receiptHash);
-        after = "AND (submitted_at, receipt_hash) < ($3::timestamptz, $4)";
+        after = `AND (submitted_at, receipt_hash) < ($${values.length - 1}::timestamptz, $${values.length})`;
       }
       values.push(params.limit + 1);
       const r = await db.query<ReceiptRow>(
         `SELECT ${COLUMNS} FROM ${receipts}
-          WHERE chain_id = $1 AND ${role} ${after}
+          WHERE chain_id = $1 ${role} ${after}
           ORDER BY submitted_at DESC, receipt_hash DESC
           LIMIT $${values.length}`,
         values,

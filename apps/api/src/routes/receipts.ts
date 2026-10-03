@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Hex } from "viem";
 import { NETWORK_NAMES, NETWORKS } from "@moltforest/chain";
 import { hashReceipt, receiptDomain, receiptJsonSchema, receiptToJson, signatureSchema, type Receipt } from "@moltforest/receipts";
-import type { AgentReceiptsResponse, ReceiptSubmitResponse, ReceiptView } from "@moltforest/types";
+import type { AgentReceiptsResponse, RecentReceiptsResponse, ReceiptSubmitResponse, ReceiptView } from "@moltforest/types";
 import { AgentParams } from "./agents.js";
 import { toReceiptView, type ReceiptCursor, type ReceiptRepository, type ReceiptRow } from "../repositories/receipts.js";
 import type { ReceiptNetwork, ReceiptNetworks } from "../services/receiptNetworks.js";
@@ -25,6 +25,13 @@ const ReceiptHashParams = z.object({
     .string()
     .regex(/^0x[0-9a-fA-F]{64}$/, "receiptHash must be 0x followed by 64 hex characters")
     .transform((s) => s.toLowerCase()),
+});
+
+const RecentReceiptsQuery = z.object({
+  /** Receipts exist on testnet only for now (D05). */
+  network: z.enum(NETWORK_NAMES).default("testnet"),
+  limit: z.coerce.number().int().min(1).max(100).default(12),
+  cursor: z.string().max(512).optional(),
 });
 
 const AgentReceiptsQuery = z.object({
@@ -168,6 +175,22 @@ export function receiptsRouter(repo: ReceiptRepository, networks: ReceiptNetwork
     }
   });
 
+  router.get("/receipts", async (req, res) => {
+    const q = RecentReceiptsQuery.parse(req.query);
+    const cursor = q.cursor ? decodeReceiptCursor(q.cursor) : undefined;
+    try {
+      const page = await repo.list({ chainId: NETWORKS[q.network].chainId, role: "any", limit: q.limit, cursor });
+      const body: RecentReceiptsResponse = {
+        network: q.network,
+        items: await withPayments(page.rows.map(view)),
+        nextCursor: page.nextCursor ? encodeReceiptCursor(page.nextCursor) : null,
+      };
+      res.json(body);
+    } catch (err) {
+      throw isMissingRelation(err) ? tableMissing() : err;
+    }
+  });
+
   router.get("/receipts/:receiptHash", async (req, res) => {
     const { receiptHash } = ReceiptHashParams.parse(req.params);
     try {
@@ -185,7 +208,7 @@ export function receiptsRouter(repo: ReceiptRepository, networks: ReceiptNetwork
     const q = AgentReceiptsQuery.parse(req.query);
     const cursor = q.cursor ? decodeReceiptCursor(q.cursor) : undefined;
     try {
-      const page = await repo.listForAgent({ chainId: NETWORKS[network].chainId, agentId, role: q.role, limit: q.limit, cursor });
+      const page = await repo.list({ chainId: NETWORKS[network].chainId, agentId, role: q.role, limit: q.limit, cursor });
       const body: AgentReceiptsResponse = {
         network,
         agentId,

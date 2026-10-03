@@ -99,7 +99,8 @@ pnpm dev:api                # http://localhost:4000
 | `GET /v1/activity/stream?network=` | Server-Sent Events: `activity` as blocks finish indexing, `status` as the indexer advances |
 | `GET /v1/sync-status?network=` | Indexer progress plus a reconciler check of the chain's highest agent id (`missingAgents` > 0 means the index is behind) |
 | `POST /v1/receipts` | Submit a signed execution receipt (see below). `202` when stored, `200` when already known |
-| `GET /v1/receipts/:receiptHash` | One receipt with its signatures, signers and anchoring status |
+| `GET /v1/receipts?network=testnet&limit=&cursor=` | The newest receipts on a network, across agents, each with its linked x402 payment |
+| `GET /v1/receipts/:receiptHash` | One receipt with its signatures, signers, anchoring status, source (`api` or `chain`) and linked payment |
 | `GET /v1/agents/:network/:agentId/receipts?role=provider\|client\|any&limit=&cursor=` | An agent's receipts, newest first |
 | `GET /v1/agents/:network/:agentId/payments?direction=received\|sent\|self\|any&limit=&cursor=` | An agent's x402 payments (matched on its owner and agent wallet), newest first. Payments between its own addresses are `self` |
 | `GET /v1/payments/:txHash?network=` | x402 payments in a transaction |

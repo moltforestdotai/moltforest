@@ -419,6 +419,13 @@ export interface ReceiptView {
   source: "api" | "chain";
 }
 
+/** GET /v1/receipts: the newest receipts on a network, each with its payment. */
+export interface RecentReceiptsResponse {
+  network: NetworkName;
+  items: ReceiptView[];
+  nextCursor: string | null;
+}
+
 export interface ReceiptSubmitResponse extends ReceiptView {
   /** True when this exact receipt was already stored (submission is idempotent). */
   duplicate: boolean;
