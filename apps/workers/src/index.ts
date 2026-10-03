@@ -5,6 +5,7 @@
  * - relay:      anchors submitted receipts (app.receipt) on the ReceiptRegistry
  * - payments:   indexes x402 USDC settlements touching agent addresses (app.x402_payment)
  * - reviews:    looks up reviewer funding and decides which reviews count (app.agent_review_summary)
+ * - receipt events: records receipts anchored on the ReceiptRegistry by anyone (app.receipt, source "chain")
  */
 import { pino, type Logger } from "pino";
 import { createPool } from "@moltforest/db";
@@ -24,6 +25,8 @@ import { createPaymentRepository } from "./payments/repository.js";
 import { runPaymentsTick } from "./payments/runner.js";
 import { createReviewRepository } from "./reviews/repository.js";
 import { runReviewsTick } from "./reviews/runner.js";
+import { createReceiptEventRepository } from "./receiptEvents/repository.js";
+import { runReceiptEventsTick } from "./receiptEvents/runner.js";
 
 const config = loadConfig();
 const logger = pino({ level: config.LOG_LEVEL });
@@ -162,6 +165,32 @@ const reviews = () => {
   });
 };
 
+/** One receipt-event scan per network with a ReceiptRegistry (testnet); off without a HyperSync token. */
+const receiptEvents = () => {
+  const log = logger.child({ worker: "receipt-events" });
+  if (!config.RECEIPT_EVENTS_ENABLED) return [];
+  if (!config.ENVIO_API_TOKEN) {
+    log.info("receipt event scan off: ENVIO_API_TOKEN is not set");
+    return [];
+  }
+  const hs = createHyperSync({ token: config.ENVIO_API_TOKEN, urlTemplate: config.HYPERSYNC_URL_TEMPLATE, logger: log });
+  const repo = createReceiptEventRepository(db, schemas.app);
+  return NETWORK_NAMES.flatMap((name) => {
+    const registry = NETWORKS[name].receiptRegistry;
+    if (!registry) return [];
+    const netLog = log.child({ network: name });
+    return [
+      loop(`receipt-events:${name}`, netLog, config.RECEIPT_EVENTS_POLL_SECONDS * 1000, async () => {
+        const stats = await runReceiptEventsTick(
+          { repo, hs, logger: netLog },
+          { chainId: NETWORKS[name].chainId, registry: registry.address, deployBlock: registry.deployBlock },
+        );
+        return { selected: stats.inserted + stats.updated, full: false, stats };
+      }),
+    ];
+  });
+};
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     logger.info(`${signal} received; finishing current batches`);
@@ -169,5 +198,5 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-await Promise.all([enrichment(), config.LIVENESS_ENABLED ? liveness() : Promise.resolve(), ...relays(), ...payments(), ...reviews()]);
+await Promise.all([enrichment(), config.LIVENESS_ENABLED ? liveness() : Promise.resolve(), ...relays(), ...payments(), ...reviews(), ...receiptEvents()]);
 await db.end();

@@ -79,6 +79,9 @@ const EnvSchema = z.object({
   REVIEWS_HUB_MIN_AGENTS: z.coerce.number().int().min(2).default(10),
   /** A wallet's later review of the same agent counts again after this many days. */
   REVIEWS_REPEAT_WINDOW_DAYS: z.coerce.number().int().min(1).default(30),
+  // --- Receipts anchored on the ReceiptRegistry by anyone (HyperSync) ---
+  RECEIPT_EVENTS_ENABLED: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
+  RECEIPT_EVENTS_POLL_SECONDS: z.coerce.number().int().min(10).default(60),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 

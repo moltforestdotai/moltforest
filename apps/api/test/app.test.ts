@@ -15,7 +15,9 @@ import type {
   AgentDetail,
   AgentListResponse,
   AgentPaymentsResponse,
+  AgentReceiptsResponse,
   PaymentLookupResponse,
+  ReceiptView,
   SyncStatus,
 } from "@moltforest/types";
 import { loadConfig } from "../src/config.js";
@@ -544,6 +546,39 @@ describe("API (integration)", () => {
         expect(detail.receipts).toMatchObject({ total: 1, coSigned: 1 });
       } finally {
         await db!.query(`DELETE FROM "${SCHEMA}".receipt`);
+      }
+    });
+
+    run("links a receipt to the x402 payment its paymentRef names, both ways", async () => {
+      const tx = `0x${"77".repeat(32)}`;
+      const linked = `0x${"a1".repeat(32)}`;
+      const unpaid = `0x${"a2".repeat(32)}`;
+      await db!.query(
+        `INSERT INTO "${SCHEMA}".x402_payment (chain_id, tx_hash, log_index, block_number, block_time, asset, payer, payee, amount, facilitator)
+         VALUES (143, $1, 3, 5000, '2026-10-03T00:00:00Z', '0xusdc', '0x00000000000000000000000000000000000000c1', '0x00000000000000000000000000000000000000c2', 10000, '0xfac')`,
+        [tx],
+      );
+      for (const [hash, ref] of [[linked, tx], [unpaid, `0x${"0".repeat(64)}`]] as const) {
+        await db!.query(
+          `INSERT INTO "${SCHEMA}".receipt (receipt_hash, chain_id, registry, task_id, client_agent_id, provider_agent_id, request_hash,
+             result_hash, payment_ref, started_at, completed_at, proof_type, proof_ref, level, provider_signature, provider_signer, anchor_status)
+           VALUES ($1, 143, '0x00', '0x00', 3, 4, '0x00', '0x00', $2, 1790000000, 1790000000, 0, '0x00', 2, '0x00', '0x00', 'anchored')`,
+          [hash, ref],
+        );
+      }
+      try {
+        const r = (await request(app).get(`/v1/receipts/${linked}`)).body as ReceiptView;
+        expect(r.payment).toMatchObject({ txHash: tx, amount: "0.01", logIndex: 3, receiptHashes: [linked] });
+        expect(((await request(app).get(`/v1/receipts/${unpaid}`)).body as ReceiptView).payment).toBeNull();
+
+        const pay = (await request(app).get(`/v1/payments/${tx}?network=mainnet`)).body as PaymentLookupResponse;
+        expect(pay.items.map((p) => p.receiptHashes)).toEqual([[linked]]);
+
+        const list = (await request(app).get("/v1/agents/mainnet/4/receipts")).body as AgentReceiptsResponse;
+        expect(Object.fromEntries(list.items.map((i) => [i.receiptHash, i.payment?.txHash ?? null]))).toEqual({ [linked]: tx, [unpaid]: null });
+      } finally {
+        await db!.query(`DELETE FROM "${SCHEMA}".receipt`);
+        await db!.query(`DELETE FROM "${SCHEMA}".x402_payment`);
       }
     });
 

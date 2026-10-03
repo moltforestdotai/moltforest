@@ -36,6 +36,13 @@
       "when": 1791029333726,
       "tag": "0004_fancy_viper",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791031791428,
+      "tag": "0005_colossal_northstar",
+      "breakpoints": true
     }
   ]
 }

@@ -33,11 +33,12 @@ export interface ReceiptRow {
   anchor_block: string | null;
   anchored_at: Date | null;
   anchor_error: string | null;
+  source: "api" | "chain";
 }
 
 export type NewReceipt = Omit<
   ReceiptRow,
-  "submitted_at" | "anchor_status" | "anchor_level" | "anchor_tx" | "anchor_block" | "anchored_at" | "anchor_error"
+  "submitted_at" | "anchor_status" | "anchor_level" | "anchor_tx" | "anchor_block" | "anchored_at" | "anchor_error" | "source"
 >;
 
 /** Keyset position in newest-first order. `submittedAt` is written with millisecond precision. */
@@ -48,7 +49,7 @@ export interface ReceiptCursor {
 
 const COLUMNS = `receipt_hash, chain_id, registry, task_id, client_agent_id, provider_agent_id, request_hash, result_hash,
   payment_ref, started_at, completed_at, proof_type, proof_ref, level, provider_signature, client_signature,
-  provider_signer, client_signer, submitted_at, anchor_status, anchor_level, anchor_tx, anchor_block, anchored_at, anchor_error`;
+  provider_signer, client_signer, submitted_at, anchor_status, anchor_level, anchor_tx, anchor_block, anchored_at, anchor_error, source`;
 
 export function createReceiptRepository(db: Db, appSchema: string) {
   const receipts = table(appSchema, "receipt");
@@ -213,5 +214,7 @@ export function toReceiptView(row: ReceiptRow): ReceiptView {
       anchoredAt: row.anchored_at?.toISOString() ?? null,
       error: row.anchor_error,
     },
+    payment: null,
+    source: row.source,
   };
 }

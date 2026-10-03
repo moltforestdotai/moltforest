@@ -8,6 +8,7 @@ import { AgentParams } from "./agents.js";
 import { toReceiptView, type ReceiptCursor, type ReceiptRepository, type ReceiptRow } from "../repositories/receipts.js";
 import type { ReceiptNetwork, ReceiptNetworks } from "../services/receiptNetworks.js";
 import { isMissingRelation } from "../repositories/sync.js";
+import type { PaymentRepository } from "../repositories/payments.js";
 import { HttpError } from "../lib/errors.js";
 
 export const SubmitReceiptBody = z
@@ -37,7 +38,11 @@ export interface ReceiptRouterOptions {
   maxFutureSeconds: number;
   /** Rate limiter for submissions (writes cost verification RPC calls and relayer gas). */
   submitLimiter?: RequestHandler;
+  /** Links each receipt to the indexed x402 payment its paymentRef names. */
+  payments?: Pick<PaymentRepository, "firstByTransactions">;
 }
+
+const ZERO_REF = `0x${"0".repeat(64)}`;
 
 const tableMissing = () =>
   new HttpError(503, "receipts_not_ready", "The receipt table is missing. Apply migrations (`pnpm db:migrate`).");
@@ -89,6 +94,20 @@ export function receiptsRouter(repo: ReceiptRepository, networks: ReceiptNetwork
   const router = Router();
   const view = (row: ReceiptRow): ReceiptView => toReceiptView(row);
 
+  /** Fills `payment` from the payment index, one query per chain. */
+  async function withPayments<T extends ReceiptView>(views: T[]): Promise<T[]> {
+    if (!opts.payments) return views;
+    const byChain = new Map<number, string[]>();
+    for (const v of views) {
+      if (v.receipt.paymentRef !== ZERO_REF) byChain.set(v.chainId, [...(byChain.get(v.chainId) ?? []), v.receipt.paymentRef]);
+    }
+    for (const [chainId, refs] of byChain) {
+      const found = await opts.payments.firstByTransactions(chainId, [...new Set(refs)]);
+      for (const v of views) if (v.chainId === chainId) v.payment = found.get(v.receipt.paymentRef) ?? null;
+    }
+    return views;
+  }
+
   router.post("/receipts", ...(opts.submitLimiter ? [opts.submitLimiter] : []), express.json({ limit: "48kb" }), async (req, res) => {
     const body = SubmitReceiptBody.parse(req.body);
     const net = networks[body.network];
@@ -107,12 +126,14 @@ export function receiptsRouter(repo: ReceiptRepository, networks: ReceiptNetwork
       if (existing) {
         // Idempotent: a stored receipt is returned as is, unless this call adds the client's co-signature.
         if (existing.level === 2 || !clientSignature) {
-          res.status(200).json({ ...view(existing), duplicate: true } satisfies ReceiptSubmitResponse);
+          const [v] = await withPayments([view(existing)]);
+          res.status(200).json({ ...v!, duplicate: true } satisfies ReceiptSubmitResponse);
           return;
         }
         const clientSigner = await verifyAgent(net, "client", receipt.clientAgentId, digest, clientSignature);
         const raised = (await repo.addClientSignature(digest, clientSignature, clientSigner)) ?? (await repo.get(digest));
-        res.status(200).json({ ...view(raised!), duplicate: false } satisfies ReceiptSubmitResponse);
+        const [v] = await withPayments([view(raised!)]);
+        res.status(200).json({ ...v!, duplicate: false } satisfies ReceiptSubmitResponse);
         return;
       }
 
@@ -140,7 +161,8 @@ export function receiptsRouter(repo: ReceiptRepository, networks: ReceiptNetwork
         client_signer: clientSigner,
       });
       const stored = await repo.get(digest);
-      res.status(inserted ? 202 : 200).json({ ...view(stored!), duplicate: !inserted } satisfies ReceiptSubmitResponse);
+      const [v] = await withPayments([view(stored!)]);
+      res.status(inserted ? 202 : 200).json({ ...v!, duplicate: !inserted } satisfies ReceiptSubmitResponse);
     } catch (err) {
       throw isMissingRelation(err) ? tableMissing() : err;
     }
@@ -151,7 +173,8 @@ export function receiptsRouter(repo: ReceiptRepository, networks: ReceiptNetwork
     try {
       const row = await repo.get(receiptHash);
       if (!row) throw new HttpError(404, "receipt_not_found", `No receipt ${receiptHash} has been submitted to MoltForest.`);
-      res.json(view(row));
+      const [v] = await withPayments([view(row)]);
+      res.json(v);
     } catch (err) {
       throw isMissingRelation(err) ? tableMissing() : err;
     }
@@ -167,7 +190,7 @@ export function receiptsRouter(repo: ReceiptRepository, networks: ReceiptNetwork
         network,
         agentId,
         role: q.role,
-        items: page.rows.map(view),
+        items: await withPayments(page.rows.map(view)),
         nextCursor: page.nextCursor ? encodeReceiptCursor(page.nextCursor) : null,
       };
       res.json(body);

@@ -63,10 +63,12 @@ export function createApp({ config, db, chain, activityHub, receipts, logger }: 
     "/v1/activity",
     activityRouter(createActivityRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA }), activityHub),
   );
+  const paymentRepository = createPaymentRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA });
   app.use(
     "/v1",
     receiptsRouter(createReceiptRepository(db, config.APP_DB_SCHEMA), receipts?.networks ?? {}, {
       maxFutureSeconds: receipts?.maxFutureSeconds ?? 300,
+      payments: paymentRepository,
       // Submissions cost RPC reads to verify and relayer gas to anchor, so they get a tighter limit.
       submitLimiter: rateLimit({
         windowMs: 60_000,
@@ -78,7 +80,7 @@ export function createApp({ config, db, chain, activityHub, receipts, logger }: 
     }),
   );
 
-  app.use("/v1", paymentsRouter(createPaymentRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA })));
+  app.use("/v1", paymentsRouter(paymentRepository));
 
   app.use(notFound);
   app.use(errorHandler);

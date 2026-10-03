@@ -187,6 +187,8 @@ export interface PaymentView {
   payerAgentCount: number;
   payeeAgentIds: string[];
   payeeAgentCount: number;
+  /** MoltForest receipts whose paymentRef is this transaction (the job this payment paid for). */
+  receiptHashes: string[];
 }
 
 export interface AgentPaymentView extends PaymentView {
@@ -411,6 +413,10 @@ export interface ReceiptView {
     anchoredAt: string | null;
     error: string | null;
   };
+  /** The indexed x402 payment `receipt.paymentRef` points to; null when it is zero or not indexed (yet). */
+  payment: PaymentView | null;
+  /** api: submitted to MoltForest; chain: found anchored on the ReceiptRegistry, submitted elsewhere. */
+  source: "api" | "chain";
 }
 
 export interface ReceiptSubmitResponse extends ReceiptView {

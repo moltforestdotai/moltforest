@@ -47,6 +47,24 @@ const lower = (a: string | null) => (a ? a.toLowerCase() : null);
 export function createPaymentRepository(db: Db, schemas: { indexer: string; app: string }) {
   const payments = table(schemas.app, "x402_payment");
   const agents = table(schemas.indexer, "Agent");
+  const receipts = table(schemas.app, "receipt");
+
+  /** Receipt hashes per payment transaction on one chain (receipt.payment_ref = tx hash). */
+  async function receiptsByTransaction(chainId: number, txHashes: string[]): Promise<Map<string, string[]>> {
+    const out = new Map<string, string[]>();
+    if (txHashes.length === 0) return out;
+    try {
+      const r = await db.query<{ payment_ref: string; hashes: string[] }>(
+        `SELECT payment_ref, array_agg(receipt_hash ORDER BY receipt_hash) AS hashes
+           FROM ${receipts} WHERE chain_id = $1 AND payment_ref = ANY($2::text[]) GROUP BY payment_ref`,
+        [chainId, txHashes],
+      );
+      for (const row of r.rows) out.set(row.payment_ref, row.hashes);
+    } catch (err) {
+      if (!isMissingRelation(err)) throw err;
+    }
+    return out;
+  }
 
   /** Agent ids (first few) and counts for each address: agents it owns or is the wallet of. */
   async function agentsByAddress(chainId: number, addresses: string[]): Promise<Map<string, { ids: string[]; count: number }>> {
@@ -67,7 +85,12 @@ export function createPaymentRepository(db: Db, schemas: { indexer: string; app:
     const byChain = new Map<number, string[]>();
     for (const row of rows) byChain.set(row.chain_id, [...(byChain.get(row.chain_id) ?? []), row.payer, row.payee]);
     const lookups = new Map<number, Map<string, { ids: string[]; count: number }>>();
-    for (const [chainId, list] of byChain) lookups.set(chainId, await agentsByAddress(chainId, [...new Set(list)]));
+    const receiptLinks = new Map<number, Map<string, string[]>>();
+    for (const [chainId, list] of byChain) {
+      lookups.set(chainId, await agentsByAddress(chainId, [...new Set(list)]));
+      const txs = [...new Set(rows.filter((r) => r.chain_id === chainId).map((r) => r.tx_hash))];
+      receiptLinks.set(chainId, await receiptsByTransaction(chainId, txs));
+    }
     return rows.map((row) => {
       const network = networkByChainId(row.chain_id);
       const known = lookups.get(row.chain_id)!;
@@ -90,6 +113,7 @@ export function createPaymentRepository(db: Db, schemas: { indexer: string; app:
         payerAgentCount: payer?.count ?? 0,
         payeeAgentIds: payee?.ids ?? [],
         payeeAgentCount: payee?.count ?? 0,
+        receiptHashes: receiptLinks.get(row.chain_id)?.get(row.tx_hash) ?? [],
       };
     });
   }
@@ -212,6 +236,23 @@ export function createPaymentRepository(db: Db, schemas: { indexer: string; app:
         items,
         nextCursor: rows.length > params.limit && last ? { blockNumber: last.block_number, txHash: last.tx_hash, logIndex: last.log_index } : null,
       };
+    },
+
+    /** The first payment in each of `txHashes` on one chain (an x402 settlement has one). */
+    async firstByTransactions(chainId: number, txHashes: string[]): Promise<Map<string, PaymentView>> {
+      const out = new Map<string, PaymentView>();
+      if (txHashes.length === 0) return out;
+      try {
+        const r = await db.query<PaymentRow>(
+          `SELECT DISTINCT ON (tx_hash) chain_id, tx_hash, log_index, block_number::text, block_time, asset, payer, payee, amount::text, facilitator
+             FROM ${payments} WHERE chain_id = $1 AND tx_hash = ANY($2::text[]) ORDER BY tx_hash, log_index`,
+          [chainId, txHashes],
+        );
+        for (const view of await toViews(r.rows)) out.set(view.txHash, view);
+      } catch (err) {
+        if (!isMissingRelation(err)) throw err;
+      }
+      return out;
     },
 
     /** Payments in one transaction, on one or all chains. */

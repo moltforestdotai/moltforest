@@ -149,6 +149,8 @@ export const receipt = app.table(
     anchorAttempts: integer("anchor_attempts").notNull().default(0),
     anchorError: text("anchor_error"),
     nextAnchorAt: timestamp("next_anchor_at", { withTimezone: true }).notNull().defaultNow(),
+    /** api: submitted through POST /v1/receipts; chain: found anchored on the ReceiptRegistry by someone else. */
+    source: text("source").$type<"api" | "chain">().notNull().default("api"),
   },
   (t) => [
     index("receipt_provider_idx").on(t.chainId, t.providerAgentId, t.submittedAt),
@@ -289,4 +291,16 @@ export const agentReviewSummary = app.table(
     assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.chainId, t.agentId] })],
+);
+
+/** Next block to scan per chain for named on-chain event scans (e.g. "receipt_events"). */
+export const chainScanCursor = app.table(
+  "chain_scan_cursor",
+  {
+    name: text("name").notNull(),
+    chainId: integer("chain_id").notNull(),
+    nextBlock: bigint("next_block", { mode: "number" }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.name, t.chainId] })],
 );
