@@ -224,6 +224,19 @@ describe("hire_agent", () => {
     expect(signer).toBe(kitAddress);
 
     expect(await kit.cosign({ receiptHash, acceptUnverified: false })).toMatchObject({ alreadyCoSigned: true });
+
+    // review_agent previews an ERC-8004 review that attaches the payment and the receipt.
+    const preview = (await kit.reviewAgent({ receiptHash, rating: 90, confirm: false })) as { preview: Record<string, unknown>; enoughMON: boolean };
+    expect(preview.preview).toMatchObject({
+      agentId: 4242,
+      value: 90,
+      tag1: "starred",
+      endpoint: verifyUrl,
+      proofOfPayment: { fromAddress: kitAddress, toAddress: provider.address, chainId: "10143", txHash: SETTLE_TX },
+      executionReceipt: { receiptHash },
+    });
+    expect(preview.enoughMON).toBe(true);
+    await expect(kit.reviewAgent({ receiptHash: `0x${"ee".repeat(32)}`, rating: 50, confirm: false })).rejects.toThrow(/No job/);
     const activity = await kit.activity();
     expect(activity.local.jobs).toEqual([expect.objectContaining({ receiptHash, coSigned: true })]);
   });

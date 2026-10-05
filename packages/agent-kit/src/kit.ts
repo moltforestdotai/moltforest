@@ -10,11 +10,11 @@
  */
 import { getAddress, parseUnits, type Account, type Chain, type LocalAccount, type PublicClient, type Transport, type WalletClient } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { estimateRegistration, registerAgent, registrationEntry } from "@moltforest/chain";
+import { buildPaidFeedbackFile, estimateRegistration, registerAgent, registrationEntry, reputationRegistryWriteAbi } from "@moltforest/chain";
 import { parseReceipt, receiptDomain, receiptToJson, signReceipt } from "@moltforest/receipts";
 import type { AgentSummary, NetworkName } from "@moltforest/types";
 import type { KitConfig } from "./config.js";
-import { balancesOf, formatMon, formatUsdc, IDENTITY_REGISTRY, RECEIPT_REGISTRY, TESTNET, TESTNET_CAIP2 } from "./chain.js";
+import { balancesOf, formatMon, formatUsdc, IDENTITY_REGISTRY, RECEIPT_REGISTRY, REPUTATION_REGISTRY, TESTNET, TESTNET_CAIP2 } from "./chain.js";
 import { checkJob, checksAllow, extractReceipt } from "./cosign.js";
 import { payAndCall, requestQuote, settledTransaction, type ServiceRequest } from "./hire.js";
 import type { MoltForestApi } from "./moltforest.js";
@@ -409,6 +409,77 @@ export class Kit {
     };
   }
 
+  /**
+   * Leaves an ERC-8004 review of a job this wallet paid for, attaching the
+   * payment (standard proofOfPayment) and the execution receipt, with the
+   * service endpoint as the purpose. MoltForest then counts it as verified.
+   */
+  async reviewAgent(args: { receiptHash: string; rating: number; confirm: boolean }) {
+    const hash = args.receiptHash.toLowerCase();
+    const ledger = await this.deps.store.readLedger();
+    const job = ledger.jobs.find((j) => j.receiptHash.toLowerCase() === hash);
+    if (!job) throw new KitError(`No job with receipt ${args.receiptHash} paid by this wallet. See my_activity.`);
+    if (job.reviewed) {
+      return { receiptHash: job.receiptHash, alreadyReviewed: true, tx: job.reviewed.tx, rating: job.reviewed.rating };
+    }
+    const payment = ledger.payments.find((p) => p.transaction.toLowerCase() === job.paymentTx.toLowerCase());
+    if (!payment) throw new KitError("The payment for this job is missing from the local ledger.");
+    const wallet = await this.wallet();
+    const providerAgentId = BigInt(job.receipt.providerAgentId);
+
+    const { file, uri, hash: feedbackHash } = buildPaidFeedbackFile({
+      chainId: TESTNET.chainId,
+      identityRegistry: IDENTITY_REGISTRY,
+      agentId: providerAgentId,
+      clientAddress: wallet.address,
+      rating: args.rating,
+      endpoint: job.url,
+      payment: { from: wallet.address, to: payment.payTo, txHash: job.paymentTx },
+      receipt: { registry: RECEIPT_REGISTRY, receiptHash: job.receiptHash },
+    });
+    const call = {
+      address: REPUTATION_REGISTRY,
+      abi: reputationRegistryWriteAbi,
+      functionName: "giveFeedback" as const,
+      args: [providerAgentId, BigInt(args.rating), 0, "starred", "", job.url, uri, feedbackHash] as const,
+    };
+    const { publicClient } = this.deps;
+    const [gas, gasPrice, balance] = await Promise.all([
+      publicClient.estimateContractGas({ account: wallet.address, ...call }),
+      publicClient.getGasPrice(),
+      publicClient.getBalance({ address: wallet.address }),
+    ]);
+    const cost = gas * gasPrice;
+    if (!args.confirm) {
+      return {
+        preview: file,
+        estimatedCostMON: formatMon(cost),
+        balanceMON: formatMon(balance),
+        enoughMON: balance >= cost,
+        next: "Show this review to the user. To post it on-chain, call review_agent again with the same receiptHash and rating, and confirm: true.",
+      };
+    }
+    if (balance < cost) throw new KitError(`Posting the review costs about ${formatMon(cost)} MON; the wallet holds ${formatMon(balance)} MON.`);
+
+    const account = await this.account();
+    const tx = await this.deps.walletClientFor(account).writeContract(call);
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: tx, timeout: 120_000 });
+    if (receipt.status !== "success") throw new KitError(`The review transaction reverted (tx ${tx}).`);
+    await this.deps.store.updateLedger((l) => {
+      const j = l.jobs.find((x) => x.receiptHash.toLowerCase() === hash);
+      if (j) j.reviewed = { at: new Date(this.now).toISOString(), tx, rating: args.rating };
+    });
+    return {
+      reviewed: true,
+      tx,
+      agentId: providerAgentId.toString(),
+      rating: args.rating,
+      attached: { payment: job.paymentTx, receipt: job.receiptHash, purpose: job.url },
+      profile: this.profileUrl("testnet", providerAgentId),
+      note: "MoltForest reads the review's file and links it to the payment on its next review check (a few minutes).",
+    };
+  }
+
   async activity() {
     const wallet = await this.wallet();
     const ledger = await this.deps.store.readLedger();
@@ -432,6 +503,7 @@ export class Kit {
           providerAgentId: j.receipt.providerAgentId,
           paymentTx: j.paymentTx,
           coSigned: j.coSigned?.submitted ?? false,
+          reviewed: j.reviewed ? { tx: j.reviewed.tx, rating: j.reviewed.rating } : null,
         })),
       },
       onMoltForest: agentId

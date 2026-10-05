@@ -93,7 +93,7 @@ describe("buildEvidenceProfile", () => {
           revokedFeedbackCount: 0,
           uniqueReviewerCount: 7665,
           lastFeedbackAt: "2026-02-17T00:00:00Z",
-          counted: { reviews: 0, reviewers: 0, notCounted: { FUNDED_BY_TARGET: 7665 }, pendingReviewers: 0, assessedAt: "2026-10-03T00:00:00Z" },
+          counted: { reviews: 0, reviewers: 0, notCounted: { FUNDED_BY_TARGET: 7665 }, pendingReviewers: 0, verifiedReviews: 0, assessedAt: "2026-10-03T00:00:00Z" },
         },
         updatedAt: "2026-02-01T00:00:00Z",
         liveness: { endpoints: 2, checked: 2, up: 0, notPublic: 1, paymentRequired: 0, uptime7d: 0, checks7d: 10 },

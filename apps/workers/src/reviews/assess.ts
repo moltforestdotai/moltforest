@@ -41,6 +41,17 @@ export interface Funding {
   sweepTx?: string | null;
 }
 
+/** A payment a review is attached to, after every check passed. */
+export interface ReviewLink {
+  by: "receipt" | "payment_proof";
+  paymentTx: string;
+  /** USDC base units. */
+  amount: string;
+  receiptHash: string | null;
+  /** The service the review is about (its endpoint): the payment's purpose. */
+  endpoint: string | null;
+}
+
 export interface ReviewLabel {
   agentId: string;
   client: string;
@@ -48,7 +59,52 @@ export interface ReviewLabel {
   counted: boolean;
   reason: ReviewExclusion | null;
   evidence: Record<string, unknown> | null;
+  /** Null when the review attaches no payment, or its attachment did not check out (see `linkProblem`). */
+  link: ReviewLink | null;
+  linkProblem: string | null;
+  /** The reviewer paid this agent before reviewing but attached nothing: information, not verification. */
+  paidUnattached: boolean;
 }
+
+/** What a review's feedback file says (only status "ok" files carry facts). */
+export interface FileFacts {
+  status: string;
+  proofTx: string | null;
+  proofChainId: string | null;
+  receiptHash: string | null;
+  endpoint: string | null;
+}
+
+export interface PaymentFact {
+  tx: string;
+  payer: string;
+  payee: string;
+  /** USDC base units. */
+  amount: string;
+  block: number;
+}
+
+export interface ReceiptFact {
+  providerAgentId: string;
+  clientSigner: string | null;
+  paymentRef: string;
+}
+
+/** Everything needed to check review <-> payment links on one chain. */
+export interface LinkContext {
+  chainId: number;
+  /** Keyed by `${agentId}:${client}:${feedbackIndex}`. */
+  files: Map<string, FileFacts>;
+  payments: Map<string, PaymentFact>;
+  receipts: Map<string, ReceiptFact>;
+  /** Payments by payer address, for the "paid but not attached" check. */
+  paymentsByPayer: Map<string, PaymentFact[]>;
+  /** The review's on-chain endpoint, used when the file gives none. Keyed like `files`. */
+  onChainEndpoints?: Map<string, string>;
+}
+
+export const reviewKey = (agentId: string, client: string, feedbackIndex: string) => `${agentId}:${client}:${feedbackIndex}`;
+const sameChain = (chainId: string | null, expected: number) => !chainId || chainId.split(":").at(-1) === String(expected);
 
 export interface AgentSummary {
   agentId: string;
@@ -56,6 +112,8 @@ export interface AgentSummary {
   countedReviewers: number;
   excluded: Partial<Record<ReviewExclusion, number>>;
   pendingReviewers: number;
+  /** Counted reviews whose payment link checks out. */
+  verifiedReviews: number;
   assessmentHash: string;
 }
 
@@ -107,6 +165,7 @@ export function assessReviews(
   agents: Map<string, AgentAddresses>,
   funding: Map<string, Funding>,
   options: AssessOptions = DEFAULT_ASSESS_OPTIONS,
+  links?: LinkContext,
 ): { labels: ReviewLabel[]; summaries: AgentSummary[]; hubs: Set<string> } {
   const hubs = findHubs(reviews, funding, options.hubMinAgents);
 
@@ -125,6 +184,56 @@ export function assessReviews(
 
   const windowSeconds = options.repeatWindowDays * 86_400;
   const labels: ReviewLabel[] = [];
+  /** A payment backs at most one review: the first, in block order. */
+  const usedPayments = new Set<string>();
+
+  /** Checks the payment a review attaches (receipt first, then proofOfPayment) and claims it. */
+  function attachment(r: ReviewRow, targetAddrs: Set<string>, targetRoots: Set<string>): Pick<ReviewLabel, "link" | "linkProblem" | "paidUnattached"> {
+    if (!links) return { link: null, linkProblem: null, paidUnattached: false };
+    const key = reviewKey(r.agentId, r.client, r.feedbackIndex);
+    const file = links.files.get(key);
+    const endpoint = file?.endpoint ?? links.onChainEndpoints?.get(key) ?? null;
+    let link: ReviewLink | null = null;
+    let problem: string | null = null;
+
+    const accept = (by: ReviewLink["by"], pay: PaymentFact, receiptHash: string | null): string | null => {
+      if (!targetAddrs.has(pay.payee)) return "the payment did not go to this agent's owner or agent wallet";
+      if (pay.block > r.blockNumber) return "the payment came after the review";
+      if (usedPayments.has(pay.tx)) return "the payment already backs another review";
+      if (targetRoots.has(clusters.find(pay.payer))) return "the payer is linked to the agent's owner by funding";
+      usedPayments.add(pay.tx);
+      link = { by, paymentTx: pay.tx, amount: pay.amount, receiptHash, endpoint };
+      return null;
+    };
+
+    if (file?.status === "hash_mismatch") {
+      problem = "the feedback file does not match its feedbackHash";
+    } else if (file?.status === "ok") {
+      if (file.receiptHash) {
+        const rc = links.receipts.get(file.receiptHash);
+        const pay = rc ? links.payments.get(rc.paymentRef) : undefined;
+        if (!rc) problem = "the named receipt is not known to MoltForest";
+        else if (rc.providerAgentId !== r.agentId) problem = "the named receipt is for another agent";
+        else if (!pay) problem = "the receipt's payment is not in MoltForest's x402 index";
+        else if (rc.clientSigner !== r.client && pay.payer !== r.client) problem = "the reviewer is not the receipt's client or payer";
+        else problem = accept("receipt", pay, file.receiptHash);
+      }
+      if (!link && file.proofTx) {
+        const pay = links.payments.get(file.proofTx);
+        const proofProblem = !sameChain(file.proofChainId, links.chainId)
+          ? "proofOfPayment names another chain"
+          : !pay
+            ? "proofOfPayment names a payment not in MoltForest's x402 index"
+            : pay.payer !== r.client
+              ? "proofOfPayment was not paid by the reviewer"
+              : accept("payment_proof", pay, null);
+        if (!link) problem = problem ?? proofProblem;
+      }
+    }
+    if (link) return { link, linkProblem: null, paidUnattached: false };
+    const paid = (links.paymentsByPayer.get(r.client) ?? []).some((p) => targetAddrs.has(p.payee) && p.block <= r.blockNumber);
+    return { link: null, linkProblem: problem, paidUnattached: paid };
+  }
   const summaries: AgentSummary[] = [];
 
   for (const [agentId, list] of [...byAgent].sort(([a], [b]) => (BigInt(a) < BigInt(b) ? -1 : 1))) {
@@ -157,6 +266,8 @@ export function assessReviews(
         counted: reason === null,
         reason,
         evidence,
+        // Only counted reviews claim a payment; others never block a later review from using it.
+        ...(reason === null ? attachment(r, targetAddrs, targetRoots) : { link: null, linkProblem: null, paidUnattached: false }),
       });
 
       if (targetAddrs.has(r.client)) {
@@ -185,6 +296,7 @@ export function assessReviews(
       countedReviewers: new Set(counted.map((l) => l.client)).size,
       excluded,
       pendingReviewers: pending.size,
+      verifiedReviews: counted.filter((l) => l.link !== null).length,
       assessmentHash: createHash("sha256").update(JSON.stringify(agentLabels)).digest("hex"),
     });
     labels.push(...agentLabels);

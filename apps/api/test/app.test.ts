@@ -378,6 +378,7 @@ describe("API (integration)", () => {
         reviewers: 0,
         notCounted: { SELF_REVIEW: 1 },
         pendingReviewers: 0,
+        verifiedReviews: 0,
         assessedAt: "2026-10-03T00:00:00.000Z",
       });
       expect(withFeedback.recentFeedback.map((f) => [f.feedbackIndex, f.counted, f.notCounted?.reason ?? null])).toEqual([
@@ -386,6 +387,26 @@ describe("API (integration)", () => {
       ]);
       expect(withFeedback.recentFeedback[1]!.notCounted?.evidence).toEqual({ reviewer: OWNER_B.toLowerCase(), role: "owner" });
       expect((await detail(4)).reputation.counted).toBeNull();
+      expect(withFeedback.recentFeedback[1]).toMatchObject({ payment: null, paymentProblem: null, paidUnattached: false });
+
+      // A review attached to a checked payment shows it, with the endpoint as its purpose; a failed check shows why.
+      const link = { by: "payment_proof", paymentTx: `0x${"55".repeat(32)}`, amount: "10000", receiptHash: null, endpoint: "https://svc.example/verify" };
+      await db!.query(`UPDATE "${SCHEMA}".review_assessment SET link = $1::jsonb WHERE chain_id = 143 AND agent_id = 0`, [JSON.stringify(link)]);
+      try {
+        const linked = (await request(app).get("/v1/agents/mainnet/0")).body as AgentDetail;
+        expect(linked.recentFeedback[1]!.payment).toEqual({
+          by: "payment_proof",
+          paymentTx: link.paymentTx,
+          amountUsdc: "0.01",
+          receiptHash: null,
+          endpoint: "https://svc.example/verify",
+        });
+        await db!.query(`UPDATE "${SCHEMA}".review_assessment SET link = '{"problem": "the payment came after the review"}'::jsonb, paid_unattached = true WHERE chain_id = 143 AND agent_id = 0`);
+        const failed = (await request(app).get("/v1/agents/mainnet/0")).body as AgentDetail;
+        expect(failed.recentFeedback[1]).toMatchObject({ payment: null, paymentProblem: "the payment came after the review", paidUnattached: true });
+      } finally {
+        await db!.query(`UPDATE "${SCHEMA}".review_assessment SET link = NULL, paid_unattached = false WHERE chain_id = 143 AND agent_id = 0`);
+      }
     });
 
     run("returns the evidence profile with task context facts on /trust", async () => {
@@ -661,6 +682,19 @@ describe("API (integration)", () => {
 
         const pay = (await request(app).get(`/v1/payments/${tx}?network=mainnet`)).body as PaymentLookupResponse;
         expect(pay.items.map((p) => p.receiptHashes)).toEqual([[linked]]);
+        expect(pay.items[0]!.reviews).toEqual([]);
+
+        // A review attached to this payment: the payment lists it, and the review's endpoint is the purpose.
+        await db!.query(
+          `INSERT INTO "${SCHEMA}".review_assessment (chain_id, agent_id, client, feedback_index, counted, link)
+           VALUES (143, 4, '0x00000000000000000000000000000000000000c1', 1, true, $1::jsonb)`,
+          [JSON.stringify({ by: "receipt", paymentTx: tx, amount: "10000", receiptHash: linked, endpoint: "https://svc.example/verify" })],
+        );
+        const reviewed = (await request(app).get(`/v1/payments/${tx}?network=mainnet`)).body as PaymentLookupResponse;
+        expect(reviewed.items[0]!.reviews).toEqual([
+          { agentId: "4", client: "0x00000000000000000000000000000000000000c1", feedbackIndex: "1", endpoint: "https://svc.example/verify" },
+        ]);
+        await db!.query(`DELETE FROM "${SCHEMA}".review_assessment WHERE agent_id = 4`);
 
         const list = (await request(app).get("/v1/agents/mainnet/4/receipts")).body as AgentReceiptsResponse;
         expect(Object.fromEntries(list.items.map((i) => [i.receiptHash, i.payment?.txHash ?? null]))).toEqual({ [linked]: tx, [unpaid]: null });

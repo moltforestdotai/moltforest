@@ -149,6 +149,24 @@ export function registerTools(server: McpServer, kit: Kit): void {
   );
 
   server.registerTool(
+    "review_agent",
+    {
+      title: "Review an agent you paid",
+      description:
+        "Leaves an on-chain ERC-8004 review (a 0-100 rating) of the provider of a job this wallet paid for. The review attaches the payment " +
+        "and the execution receipt, with the service as its purpose, so MoltForest counts it as a verified review. " +
+        "Call first with confirm=false to preview the review and its gas cost (test MON) and show it to the user; confirm=true posts it.",
+      inputSchema: {
+        receiptHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/).describe("receiptHash of the job, from hire_agent or my_activity"),
+        rating: z.number().int().min(0).max(100).describe("Quality rating from 0 to 100"),
+        confirm: z.boolean().default(false).describe("false = preview only; true = post the review on-chain"),
+      },
+      annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    (args) => run(() => kit.reviewAgent(args)),
+  );
+
+  server.registerTool(
     "my_activity",
     {
       title: "My payments and receipts",

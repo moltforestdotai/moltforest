@@ -26,6 +26,8 @@ export const PolicySchema = z
     minAgeDays: z.number().min(0).optional(),
     minCountedReviews: z.number().int().min(0).optional(),
     minCountedReviewers: z.number().int().min(0).optional(),
+    /** Counted reviews attached to a checked payment. */
+    minVerifiedReviews: z.number().int().min(0).optional(),
     minReceipts: z.number().int().min(0).optional(),
     /** 1 = provider-signed, 2 = client co-signed. */
     minReceiptLevel: z.union([z.literal(1), z.literal(2)]).optional(),
@@ -71,6 +73,7 @@ export function evaluatePolicy(profile: EvidenceProfile, policy: Policy): { requ
     ...atLeast("minAgeDays", policy.minAgeDays, p.identity.ageDays),
     ...atLeast("minCountedReviews", policy.minCountedReviews, p.reputation.countedReviews),
     ...atLeast("minCountedReviewers", policy.minCountedReviewers, p.reputation.countedReviewers),
+    ...atLeast("minVerifiedReviews", policy.minVerifiedReviews, p.reputation.verifiedReviews),
     ...atLeast("minReceipts", policy.minReceipts, p.verification.receipts),
     ...atLeast("minReceiptsWithPayment", policy.minReceiptsWithPayment, p.verification.receiptsWithPayment),
     ...atLeast("minPaymentsFromOthers", policy.minPaymentsFromOthers, p.economic.paymentsReceivedFromOthers),

@@ -270,6 +270,10 @@ export const reviewAssessment = app.table(
     reason: text("reason").$type<ReviewExclusion>(),
     /** e.g. { funder, fundingTx, clusterSize, sweepTx } */
     evidence: jsonb("evidence"),
+    /** The payment this review is attached to and how (receipt or ERC-8004 proofOfPayment), when the link checks out. */
+    link: jsonb("link"),
+    /** The reviewer paid the agent before reviewing but attached nothing (information only, not verified). */
+    paidUnattached: boolean("paid_unattached").notNull().default(false),
   },
   (t) => [primaryKey({ columns: [t.chainId, t.agentId, t.client, t.feedbackIndex] })],
 );
@@ -286,6 +290,8 @@ export const agentReviewSummary = app.table(
     excluded: jsonb("excluded").$type<Partial<Record<ReviewExclusion, number>>>().notNull(),
     /** Reviewer wallets whose funding is not looked up yet; counts can still drop while this is above zero. */
     pendingReviewers: integer("pending_reviewers").notNull(),
+    /** Counted reviews attached to a checked payment (via a receipt or proofOfPayment). */
+    verifiedReviews: integer("verified_reviews").notNull().default(0),
     /** Hash of this agent's review labels, so an unchanged assessment is not rewritten. */
     assessmentHash: text("assessment_hash").notNull(),
     assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
@@ -303,4 +309,36 @@ export const chainScanCursor = app.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.name, t.chainId] })],
+);
+
+/**
+ * ERC-8004 feedback files (the review's feedbackURI), fetched once and checked
+ * against feedbackHash. Only the facts MoltForest uses are kept: the
+ * proofOfPayment, an executionReceipt hash and the endpoint (the purpose).
+ */
+export const feedbackFile = app.table(
+  "feedback_file",
+  {
+    chainId: integer("chain_id").notNull(),
+    agentId: numeric("agent_id", { precision: 78, scale: 0, mode: "string" }).notNull(),
+    client: text("client").notNull(),
+    feedbackIndex: numeric("feedback_index", { precision: 78, scale: 0, mode: "string" }).notNull(),
+    uri: text("uri").notNull(),
+    /** pending · ok · invalid · hash_mismatch · unreachable · too_large · blocked · unsupported */
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    nextFetchAt: timestamp("next_fetch_at", { withTimezone: true }).notNull().defaultNow(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    proofTx: text("proof_tx"),
+    proofChainId: text("proof_chain_id"),
+    proofFrom: text("proof_from"),
+    proofTo: text("proof_to"),
+    receiptHash: text("receipt_hash"),
+    endpoint: text("endpoint"),
+    error: text("error"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.chainId, t.agentId, t.client, t.feedbackIndex] }),
+    index("feedback_file_due_idx").on(t.nextFetchAt).where(sql`status IN ('pending', 'unreachable')`),
+  ],
 );

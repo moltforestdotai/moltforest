@@ -43,6 +43,13 @@
       "when": 1791031791428,
       "tag": "0005_colossal_northstar",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791185874711,
+      "tag": "0006_tidy_jocasta",
+      "breakpoints": true
     }
   ]
 }

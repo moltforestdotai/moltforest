@@ -84,8 +84,21 @@ export interface AgentReputationSummary {
     notCounted: Partial<Record<ReviewExclusionReason, number>>;
     /** Reviewer wallets whose funding is not looked up yet; their reviews count for now. */
     pendingReviewers: number;
+    /** Counted reviews attached to a checked x402 payment (via a receipt or ERC-8004 proofOfPayment). */
+    verifiedReviews: number;
     assessedAt: string;
   } | null;
+}
+
+/** The payment a review is attached to, after MoltForest checked it (payer, payee, timing, one review per payment). */
+export interface ReviewPaymentLink {
+  by: "receipt" | "payment_proof";
+  paymentTx: string;
+  /** Decimal USDC. */
+  amountUsdc: string;
+  receiptHash: string | null;
+  /** The service the review is about (its endpoint): the purpose of the payment. */
+  endpoint: string | null;
 }
 
 /** Liveness roll-up over the agent's declared http(s) service endpoints. */
@@ -189,6 +202,8 @@ export interface PaymentView {
   payeeAgentCount: number;
   /** MoltForest receipts whose paymentRef is this transaction (the job this payment paid for). */
   receiptHashes: string[];
+  /** Reviews attached to this payment; their endpoint says what it paid for. */
+  reviews: { agentId: string; client: string; feedbackIndex: string; endpoint: string | null }[];
 }
 
 export interface AgentPaymentView extends PaymentView {
@@ -255,6 +270,12 @@ export interface FeedbackEntry {
   counted: boolean | null;
   /** Why it does not count, with on-chain evidence (e.g. funder and funding tx). */
   notCounted: { reason: ReviewExclusionReason; evidence: Record<string, unknown> | null } | null;
+  /** The x402 payment the review is attached to, when the attachment checks out. */
+  payment: ReviewPaymentLink | null;
+  /** Why an attached payment did not check out (e.g. "the payment came after the review"). */
+  paymentProblem: string | null;
+  /** The reviewer paid this agent before reviewing but attached nothing (information, not verification). */
+  paidUnattached: boolean;
 }
 
 export interface AgentDetail extends AgentSummary {
@@ -522,6 +543,8 @@ export interface EvidenceProfile {
     reviewers: Metric;
     countedReviews: Metric;
     countedReviewers: Metric;
+    /** Counted reviews attached to a checked x402 payment. */
+    verifiedReviews: Metric;
     notCounted: Metric<Partial<Record<ReviewExclusionReason, number>>>;
     lastReviewAt: Metric<string>;
   };

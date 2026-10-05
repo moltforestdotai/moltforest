@@ -1,3 +1,4 @@
+import { formatUnits } from "viem";
 import { agentGlobalId, NETWORKS, type NetworkName } from "@moltforest/chain";
 import type {
   AgentDetail,
@@ -71,6 +72,7 @@ const SUMMARY_COLUMNS = [
   "reviewers_counted",
   "reviews_not_counted",
   "reviewers_pending",
+  "reviews_verified",
   "reviews_assessed_at",
 ].join(", ");
 
@@ -100,6 +102,7 @@ interface AgentRow {
   reviewers_counted: number | null;
   reviews_not_counted: Partial<Record<ReviewExclusionReason, number>> | null;
   reviewers_pending: number | null;
+  reviews_verified: number | null;
   reviews_assessed_at: Date | null;
 }
 
@@ -156,7 +159,8 @@ function effectiveAgents(indexerSchema: string, appSchema: string): string {
            CASE WHEN p.uri = a.agent_uri THEN p.next_fetch_at END AS profile_next_fetch_at,
            p.change_count AS profile_change_count,
            rs.counted_reviews AS reviews_counted, rs.counted_reviewers AS reviewers_counted,
-           rs.excluded AS reviews_not_counted, rs.pending_reviewers AS reviewers_pending, rs.assessed_at AS reviews_assessed_at
+           rs.excluded AS reviews_not_counted, rs.pending_reviewers AS reviewers_pending, rs.verified_reviews AS reviews_verified,
+           rs.assessed_at AS reviews_assessed_at
       FROM ${table(indexerSchema, "Agent")} a
       LEFT JOIN ${table(appSchema, "agent_profile")} p ON p.chain_id = a.chain_id AND p.agent_id = a.agent_id
       LEFT JOIN ${table(appSchema, "agent_review_summary")} rs ON rs.chain_id = a.chain_id AND rs.agent_id = a.agent_id
@@ -242,6 +246,7 @@ function toSummary(network: NetworkName, row: AgentRow): Omit<AgentSummary, "liv
               reviewers: row.reviewers_counted ?? 0,
               notCounted: row.reviews_not_counted ?? {},
               pendingReviewers: row.reviewers_pending ?? 0,
+              verifiedReviews: row.reviews_verified ?? 0,
               assessedAt: row.reviews_assessed_at.toISOString(),
             },
     },
@@ -392,9 +397,12 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
           counted: boolean | null;
           reason: ReviewExclusionReason | null;
           evidence: Record<string, unknown> | null;
+          link: { by?: "receipt" | "payment_proof"; paymentTx?: string; amount?: string; receiptHash?: string | null; endpoint?: string | null; problem?: string } | null;
+          paid_unattached: boolean | null;
         }>(
           `SELECT f.client, f.feedback_index, f.value, f.value_decimals, f.tag1, f.tag2, f.endpoint, f.feedback_uri, f.feedback_hash,
-                  f.revoked, f.response_count, f.block_number, f."timestamp", f.tx_hash, ra.counted, ra.reason, ra.evidence
+                  f.revoked, f.response_count, f.block_number, f."timestamp", f.tx_hash, ra.counted, ra.reason, ra.evidence,
+                  ra.link, ra.paid_unattached
              FROM ${feedback} f
              LEFT JOIN ${reviewAssessment} ra
                ON ra.chain_id = f.chain_id AND ra.agent_id = f.agent_id::numeric AND ra.client = lower(f.client) AND ra.feedback_index = f.feedback_index
@@ -429,6 +437,18 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
         txHash: f.tx_hash,
         counted: f.counted,
         notCounted: f.counted === false && f.reason ? { reason: f.reason, evidence: f.evidence } : null,
+        payment:
+          f.link?.by && f.link.paymentTx && f.link.amount
+            ? {
+                by: f.link.by,
+                paymentTx: f.link.paymentTx,
+                amountUsdc: formatUnits(BigInt(f.link.amount), 6),
+                receiptHash: f.link.receiptHash ?? null,
+                endpoint: f.link.endpoint ?? null,
+              }
+            : null,
+        paymentProblem: f.link?.problem ?? null,
+        paidUnattached: f.paid_unattached ?? false,
       }));
 
       const summary = toSummary(network, row);

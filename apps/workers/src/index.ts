@@ -156,7 +156,17 @@ const reviews = () => {
     return loop(`reviews:${name}`, netLog, config.REVIEWS_POLL_SECONDS * 1000, async () => {
       const stats = await runReviewsTick(
         { repo, hs, logger: netLog },
-        { chainId: network.chainId, hubMinAgents: config.REVIEWS_HUB_MIN_AGENTS, repeatWindowDays: config.REVIEWS_REPEAT_WINDOW_DAYS },
+        {
+          chainId: network.chainId,
+          hubMinAgents: config.REVIEWS_HUB_MIN_AGENTS,
+          repeatWindowDays: config.REVIEWS_REPEAT_WINDOW_DAYS,
+          files: {
+            batch: 500,
+            concurrency: 8,
+            fetch: { timeoutMs: config.ENRICH_TIMEOUT_MS, maxBytes: config.ENRICH_MAX_BYTES, userAgent: USER_AGENT },
+            ipfsGateways: config.IPFS_GATEWAYS,
+          },
+        },
       );
       // Funding lookups left: run again soon instead of waiting a full poll interval.
       const more = (await repo.pendingWallets(network.chainId, 1)).length > 0;

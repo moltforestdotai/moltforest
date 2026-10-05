@@ -46,6 +46,8 @@ export interface JobRecord {
   registry: Address;
   chainId: number;
   coSigned?: { at: string; clientSignature: Hex; submitted: boolean; level?: number };
+  /** The ERC-8004 review this agent left for the job, with the payment attached. */
+  reviewed?: { at: string; tx: Hex; rating: number };
 }
 
 export interface LedgerFile {

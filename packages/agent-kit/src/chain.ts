@@ -19,6 +19,7 @@ export const TESTNET = NETWORKS.testnet;
 export const TESTNET_CAIP2 = `eip155:${TESTNET.chainId}` as const;
 export const USDC = getAddress(TESTNET.usdc);
 export const IDENTITY_REGISTRY = getAddress(TESTNET.identityRegistry);
+export const REPUTATION_REGISTRY = getAddress(TESTNET.reputationRegistry);
 export const RECEIPT_REGISTRY = getAddress(TESTNET.receiptRegistry!.address);
 
 export const formatUsdc = (atomic: bigint) => formatUnits(atomic, 6);

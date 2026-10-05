@@ -110,6 +110,12 @@ export function buildEvidenceProfile(agent: AgentDetail, stats: EvidenceStats, n
       reviewers: measured(r.uniqueReviewerCount, reviewSource),
       countedReviews: r.counted ? measured(r.counted.reviews, reviewSource) : notMeasured({ ...reviewSource, note: "Reviews not checked yet." }),
       countedReviewers: r.counted ? measured(r.counted.reviewers, reviewSource) : notMeasured({ ...reviewSource, note: "Reviews not checked yet." }),
+      verifiedReviews: r.counted
+        ? measured(r.counted.verifiedReviews, {
+            ...reviewSource,
+            note: "Counted reviews whose feedback file attaches an x402 payment (an execution receipt or ERC-8004 proofOfPayment) from the reviewer to this agent, before the review; one review per payment.",
+          })
+        : notMeasured({ ...reviewSource, note: "Reviews not checked yet." }),
       notCounted: r.counted ? measured(r.counted.notCounted, { ...reviewSource, note: "Each review that does not count keeps its reason and funding evidence in recentFeedback." }) : notMeasured(reviewSource),
       lastReviewAt: r.lastFeedbackAt ? measured(r.lastFeedbackAt, reviewSource) : notMeasured(reviewSource),
     },
