@@ -153,3 +153,41 @@ describe("buildTaskContext", () => {
     expect(buildTaskContext(buildEvidenceProfile(a, STATS, NOW), a, {})).toEqual([]);
   });
 });
+
+describe("evaluatePolicy", async () => {
+  const { evaluatePolicy, PolicySchema } = await import("../src/evidence/evaluate.js");
+  const profile = buildEvidenceProfile(agent(), STATS, NOW);
+
+  it("reports each of the caller's rules as met, not_met or not_measurable", () => {
+    const policy = PolicySchema.parse({
+      minReceipts: 1,
+      minReceiptLevel: 2,
+      minPaymentsFromOthers: 3,
+      minUptime7d: 0.99,
+      maxEndpointLatencyMs: 100,
+      minCountedReviewers: 1,
+      requireX402Support: true,
+      excludeObservations: ["LOW_HISTORY", "STALE"],
+    });
+    const { requirements, policyMet } = evaluatePolicy(profile, policy);
+    expect(requirements.map((r) => [r.rule, r.observed, r.result])).toEqual([
+      ["minCountedReviewers", null, "not_measurable"],
+      ["minReceipts", 1, "met"],
+      ["minPaymentsFromOthers", 1, "not_met"],
+      ["minUptime7d", 1, "met"],
+      ["minReceiptLevel", 2, "met"],
+      ["maxEndpointLatencyMs", 42, "met"],
+      ["requireX402Support", true, "met"],
+      ["excludeObservations", ["LOW_HISTORY"], "not_met"],
+    ]);
+    expect(policyMet).toBe(false);
+  });
+
+  it("meets a policy whose every rule is met", () => {
+    expect(evaluatePolicy(profile, PolicySchema.parse({ minReceipts: 1, minReceiptLevel: 2 })).policyMet).toBe(true);
+  });
+
+  it("rejects unknown rules", () => {
+    expect(() => PolicySchema.parse({ trustScoreAbove: 80 })).toThrow();
+  });
+});

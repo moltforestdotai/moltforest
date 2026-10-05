@@ -410,6 +410,57 @@ describe("API (integration)", () => {
       expect((await request(app).get("/v1/agents/mainnet/99/trust")).status).toBe(404);
     });
 
+    run("applies the caller's policy on /v1/evaluate, side by side", async () => {
+      const res = await request(app)
+        .post("/v1/evaluate")
+        .send({ network: "mainnet", agentIds: ["0", "3", "99"], policy: { minCountedReviewers: 1, minReceipts: 0 }, includeProfile: false });
+      expect(res.status).toBe(200);
+      const body = res.body as { results: { agentId: string; found: boolean; policyMet: boolean | null; requirements: { rule: string; result: string }[] }[]; note: string };
+      expect(body.results.map((r) => [r.agentId, r.found, r.policyMet])).toEqual([
+        ["0", true, false],
+        ["3", true, false],
+        ["99", false, null],
+      ]);
+      expect(body.results[0]!.requirements.map((r) => [r.rule, r.result])).toEqual([
+        ["minCountedReviewers", "not_met"],
+        ["minReceipts", "met"],
+      ]);
+      // Agent 3's reviews are not assessed yet: counted reviewers cannot be measured.
+      expect(body.results[1]!.requirements[0]).toMatchObject({ rule: "minCountedReviewers", result: "not_measurable" });
+      expect(body.note).toMatch(/not a MoltForest verdict/);
+      expect((await request(app).post("/v1/evaluate").send({ network: "mainnet", agentIds: [], policy: {} })).status).toBe(400);
+      expect((await request(app).post("/v1/evaluate").send({ network: "mainnet", agentIds: ["0"], policy: { score: 5 } })).status).toBe(400);
+    });
+
+    run("serves read-only MCP tools over stateless HTTP", async () => {
+      const rpc = (method: string, params: unknown, id = 1) =>
+        request(app).post("/mcp").set("accept", "application/json, text/event-stream").send({ jsonrpc: "2.0", id, method, params });
+      const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } });
+      expect(init.status).toBe(200);
+      expect(init.body.result.serverInfo.name).toBe("moltforest");
+
+      const tools = await rpc("tools/list", {});
+      expect(tools.body.result.tools.map((t: { name: string }) => t.name).sort()).toEqual([
+        "evaluate_agents",
+        "get_agent_trust",
+        "get_receipt",
+        "search_agents",
+        "verify_receipt",
+      ]);
+
+      const trust = await rpc("tools/call", { name: "get_agent_trust", arguments: { network: "mainnet", agentId: "0", minimumHistory: 2 } });
+      const payload = JSON.parse(trust.body.result.content[0].text) as TrustResponse;
+      expect(payload.profile.reputation.countedReviews.value).toBe(0);
+      expect(payload.context.facts).toEqual([expect.objectContaining({ parameter: "minimumHistory", comparison: "below" })]);
+
+      const search = await rpc("tools/call", { name: "search_agents", arguments: { network: "mainnet", query: "Alpha" } });
+      expect(JSON.parse(search.body.result.content[0].text).agents.map((a: { agentId: string }) => a.agentId)).toEqual(["0"]);
+
+      const missing = await rpc("tools/call", { name: "get_agent_trust", arguments: { network: "mainnet", agentId: "99" } });
+      expect(missing.body.result.isError).toBe(true);
+      expect((await request(app).get("/mcp")).status).toBe(405);
+    });
+
     run("404s for unknown agents and routes", async () => {
       const missing = await request(app).get("/v1/agents/mainnet/99");
       expect(missing.status).toBe(404);

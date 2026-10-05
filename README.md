@@ -100,6 +100,8 @@ pnpm dev:api                # http://localhost:4000
 | `GET /v1/sync-status?network=` | Indexer progress plus a reconciler check of the chain's highest agent id (`missingAgents` > 0 means the index is behind) |
 | `POST /v1/receipts` | Submit a signed execution receipt (see below). `202` when stored, `200` when already known |
 | `GET /v1/agents/:network/:agentId/trust?taskType=&valueAtRisk=&requiredProof=&maxLatencyMs=&minimumHistory=` | Evidence profile: identity, reliability, reputation (counted), economic, verification, each metric with provenance; neutral observations; evidence coverage; and, for the given task context, each asked value next to the observed one. No score or verdict |
+| `POST /v1/evaluate` | `{ network, agentIds: [1–10], policy, context?, includeProfile? }`: applies the **caller's** policy (`minCountedReviewers`, `minReceipts`, `minReceiptLevel`, `minPaymentsFromOthers`, `minDistinctPayers`, `minUptime7d`, `maxEndpointLatencyMs`, `requireX402Support`, `requireActive`, `excludeObservations`, …) to each agent: every rule `met`, `not_met` or `not_measurable` with the observed value and provenance; `policyMet` is the caller's policy result |
+| `POST /mcp` | Hosted read-only MCP server (Streamable HTTP, stateless): `search_agents`, `get_agent_trust`, `evaluate_agents`, `get_receipt`, `verify_receipt` |
 | `GET /v1/receipts?network=testnet&limit=&cursor=` | The newest receipts on a network, across agents, each with its linked x402 payment |
 | `GET /v1/receipts/:receiptHash` | One receipt with its signatures, signers, anchoring status, source (`api` or `chain`) and linked payment |
 | `GET /v1/agents/:network/:agentId/receipts?role=provider\|client\|any&limit=&cursor=` | An agent's receipts, newest first |

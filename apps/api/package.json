@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@moltforest/chain": "workspace:*",
     "@moltforest/db": "workspace:*",
     "@moltforest/receipts": "workspace:*",
