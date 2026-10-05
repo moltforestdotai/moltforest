@@ -49,19 +49,46 @@ export function createPaymentRepository(db: Db, schemas: { indexer: string; app:
   const agents = table(schemas.indexer, "Agent");
   const receipts = table(schemas.app, "receipt");
   const assessments = table(schemas.app, "review_assessment");
+  const feedback = table(schemas.indexer, "Feedback");
 
   /** Reviews attached to each payment transaction on one chain (from the review assessment). */
   async function reviewsByTransaction(chainId: number, txHashes: string[]): Promise<Map<string, PaymentView["reviews"]>> {
     const out = new Map<string, PaymentView["reviews"]>();
     if (txHashes.length === 0) return out;
     try {
-      const r = await db.query<{ tx: string; agent_id: string; client: string; feedback_index: string; endpoint: string | null }>(
-        `SELECT link->>'paymentTx' AS tx, agent_id::text, client, feedback_index::text, link->>'endpoint' AS endpoint
-           FROM ${assessments} WHERE chain_id = $1 AND link->>'paymentTx' = ANY($2::text[])`,
+      const r = await db.query<{
+        tx: string;
+        agent_id: string;
+        client: string;
+        feedback_index: string;
+        endpoint: string | null;
+        counted: boolean;
+        value: string | null;
+        value_decimals: number | null;
+        tag1: string | null;
+      }>(
+        `SELECT ra.link->>'paymentTx' AS tx, ra.agent_id::text, ra.client, ra.feedback_index::text, ra.link->>'endpoint' AS endpoint,
+                ra.counted, f.value::text, f.value_decimals, f.tag1
+           FROM ${assessments} ra
+           LEFT JOIN ${feedback} f
+             ON f.chain_id = ra.chain_id AND f.agent_id = ra.agent_id::text AND lower(f.client) = ra.client AND f.feedback_index = ra.feedback_index
+          WHERE ra.chain_id = $1 AND ra.link->>'paymentTx' = ANY($2::text[])`,
         [chainId, txHashes],
       );
       for (const row of r.rows) {
-        out.set(row.tx, [...(out.get(row.tx) ?? []), { agentId: row.agent_id, client: row.client, feedbackIndex: row.feedback_index, endpoint: row.endpoint }]);
+        out.set(row.tx, [
+          ...(out.get(row.tx) ?? []),
+          {
+            agentId: row.agent_id,
+            client: row.client,
+            feedbackIndex: row.feedback_index,
+            endpoint: row.endpoint,
+            counted: row.counted,
+            value: row.value,
+            valueDecimals: row.value_decimals,
+            tag1: row.tag1,
+          },
+        ]);
       }
     } catch (err) {
       if (!isMissingRelation(err)) throw err;

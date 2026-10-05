@@ -40,6 +40,9 @@ const measured = <T>(value: T, provenance: Provenance): Metric<T> => ({ value, s
 const notMeasured = <T>(provenance: Provenance): Metric<T> => ({ value: null, status: "not_measured", provenance });
 const usdc = (units: string) => formatUnits(BigInt(units), 6);
 const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+/** The latest of some ISO timestamps, or null. */
+const latestOf = (...dates: (string | null | undefined)[]): string | null =>
+  dates.reduce<string | null>((latest, d) => (d && (!latest || Date.parse(d) > Date.parse(latest)) ? d : latest), null);
 
 export function buildEvidenceProfile(agent: AgentDetail, stats: EvidenceStats, now: Date): EvidenceProfile {
   const network = NETWORKS[agent.network];
@@ -55,14 +58,32 @@ export function buildEvidenceProfile(agent: AgentDetail, stats: EvidenceStats, n
   const r = agent.reputation;
   const p = agent.payments;
   const rc = agent.receipts;
+  const given = agent.reviewsGiven;
 
   const livenessSource: Provenance = {
     api,
     window: "last 7 days",
     note: "MoltForest probes each declared http(s) endpoint about every 15 minutes; any HTTP answer below 500 counts as up.",
   };
+  // No declared endpoint (e.g. an agent that only hires others): there is nothing to check, which is not a failure.
+  const noEndpointSource: Provenance = {
+    ...livenessSource,
+    note: "The registration file declares no http(s) endpoint, so there is nothing to check (for example an agent that only hires others).",
+  };
+  const uptimeSource = l.endpoints === 0 ? noEndpointSource : livenessSource;
   const latencies = agent.endpoints.map((e) => e.avgLatencyMs7d).filter((v): v is number => v !== null);
+  const lastActivity = latestOf(p.lastPaymentAt, rc.lastCompletedAt, rc.lastAsClientAt, given.lastAt, agent.updatedAt);
+  const activitySource: Provenance = {
+    api,
+    note: "Latest of the agent's own actions: x402 payment sent or received, execution receipt as provider or co-signed as client, review written, registration update.",
+  };
   const reviewSource: Provenance = { api, contract: reputationContract, window: "all time" };
+  const reviewsGivenSource: Provenance = {
+    api,
+    contract: reputationContract,
+    window: "all time",
+    note: "Non-revoked reviews whose client is the agent's owner or agent wallet, about other agents. Context only: they say nothing about this agent's own work.",
+  };
   const paymentSource: Provenance = {
     api: `${api}/payments?direction=received`,
     contract: usdcContract,
@@ -99,9 +120,10 @@ export function buildEvidenceProfile(agent: AgentDetail, stats: EvidenceStats, n
     },
     reliability: {
       endpoints: measured(l.endpoints, livenessSource),
-      endpointsUp: l.checked > 0 ? measured(l.up, livenessSource) : notMeasured(livenessSource),
-      uptime7d: l.uptime7d === null ? notMeasured(livenessSource) : measured(l.uptime7d, livenessSource),
-      endpointLatencyMs7d: latencies.length > 0 ? measured(Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length), livenessSource) : notMeasured(livenessSource),
+      endpointsUp: l.checked > 0 ? measured(l.up, livenessSource) : notMeasured(uptimeSource),
+      uptime7d: l.uptime7d === null ? notMeasured(uptimeSource) : measured(l.uptime7d, livenessSource),
+      endpointLatencyMs7d: latencies.length > 0 ? measured(Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length), livenessSource) : notMeasured(uptimeSource),
+      lastActivityAt: lastActivity ? measured(lastActivity, activitySource) : notMeasured(activitySource),
       jobSuccessRate: notMeasured(jobSource),
       jobLatencyMs: notMeasured(jobSource),
     },
@@ -118,6 +140,11 @@ export function buildEvidenceProfile(agent: AgentDetail, stats: EvidenceStats, n
         : notMeasured({ ...reviewSource, note: "Reviews not checked yet." }),
       notCounted: r.counted ? measured(r.counted.notCounted, { ...reviewSource, note: "Each review that does not count keeps its reason and funding evidence in recentFeedback." }) : notMeasured(reviewSource),
       lastReviewAt: r.lastFeedbackAt ? measured(r.lastFeedbackAt, reviewSource) : notMeasured(reviewSource),
+      reviewsGiven: measured(given.reviews, reviewsGivenSource),
+      verifiedReviewsGiven: measured(given.verified, {
+        ...reviewsGivenSource,
+        note: "Reviews this agent wrote that the reviewed agent's assessment counts and attaches to a checked x402 payment (D39).",
+      }),
     },
     economic: {
       paymentsReceivedFromOthers: measured(p.receivedFromOthers, paymentSource),
@@ -135,6 +162,11 @@ export function buildEvidenceProfile(agent: AgentDetail, stats: EvidenceStats, n
       receiptsWithPayment: measured(stats.receipts.withPayment, { ...receiptSource, note: "Receipts whose paymentRef names an indexed x402 payment." }),
       highestReceiptLevel: stats.receipts.highestLevel === null ? notMeasured({ ...receiptSource, note: "No receipts." }) : measured(stats.receipts.highestLevel, receiptSource),
       lastReceiptAt: rc.lastCompletedAt ? measured(rc.lastCompletedAt, receiptSource) : notMeasured(receiptSource),
+      coSignedAsClient: measured(rc.coSignedAsClient, {
+        ...receiptSource,
+        api: `${api}/receipts?role=client`,
+        note: "Level-2 receipts this agent co-signed as the client: jobs it hired another agent for.",
+      }),
     },
     observations: [],
     coverage: [],
@@ -147,20 +179,21 @@ export function buildEvidenceProfile(agent: AgentDetail, stats: EvidenceStats, n
     obs.push({
       code: "LOW_HISTORY",
       severity: "info",
-      message: `Little observable work history: ${plural(rc.total, "receipt")} as provider and ${plural(p.receivedFromOthers, "x402 payment")} received from other addresses.`,
+      message: `Little observable work history: ${plural(rc.total, "receipt")} as provider and ${plural(p.receivedFromOthers, "x402 payment")} received from other addresses.${
+        p.sent > 0 || rc.coSignedAsClient > 0
+          ? ` As a client it sent ${plural(p.sent, "x402 payment")} and co-signed ${plural(rc.coSignedAsClient, "receipt")}.`
+          : ""
+      }`,
       provenance: { ...receiptSource, note: `Threshold: ${LOW_HISTORY_THRESHOLD} receipts plus payments.` },
     });
   }
-  const lastActivity = [r.lastFeedbackAt, p.lastPaymentAt, rc.lastCompletedAt, agent.updatedAt]
-    .filter((d): d is string => !!d)
-    .map((d) => Date.parse(d))
-    .reduce((a, b) => Math.max(a, b), 0);
-  if (lastActivity > 0 && now.getTime() - lastActivity > STALE_AFTER_DAYS * DAY_MS) {
+  const lastSeen = latestOf(r.lastFeedbackAt, lastActivity);
+  if (lastSeen && now.getTime() - Date.parse(lastSeen) > STALE_AFTER_DAYS * DAY_MS) {
     obs.push({
       code: "STALE",
       severity: "notice",
-      message: `No reviews, payments, receipts or profile updates seen for more than ${STALE_AFTER_DAYS} days (last on ${new Date(lastActivity).toISOString().slice(0, 10)}).`,
-      provenance: { api, note: "Latest of: last review, last payment, last receipt, last registration update." },
+      message: `No reviews, payments, receipts or profile updates seen for more than ${STALE_AFTER_DAYS} days (last on ${lastSeen.slice(0, 10)}).`,
+      provenance: { api, note: "Latest of: last review received or written, last payment, last receipt in either role, last registration update." },
     });
   }
   if (r.counted && notCountedTotal > 0) {
@@ -183,7 +216,12 @@ export function buildEvidenceProfile(agent: AgentDetail, stats: EvidenceStats, n
     });
   }
   if (rc.total === 0) {
-    obs.push({ code: "NO_RECEIPTS", severity: "info", message: "No execution receipts where this agent is the provider.", provenance: receiptSource });
+    obs.push({
+      code: "NO_RECEIPTS",
+      severity: "info",
+      message: `No execution receipts where this agent is the provider${rc.coSignedAsClient > 0 ? ` (it co-signed ${plural(rc.coSignedAsClient, "receipt")} as a client)` : ""}.`,
+      provenance: receiptSource,
+    });
   }
   const fileChanges = agent.profileFetch?.contentChangeCount ?? 0;
   if (agent.uriChangeCount >= CHURN_THRESHOLD || fileChanges >= CHURN_THRESHOLD) {

@@ -18,6 +18,7 @@ import type {
 import { table, type Db } from "../db.js";
 import { createLivenessRepository } from "./liveness.js";
 import { createReceiptRepository, EMPTY_RECEIPT_SUMMARY } from "./receipts.js";
+import { createReviewsGivenRepository, EMPTY_REVIEWS_GIVEN } from "./reviewsGiven.js";
 import { createPaymentRepository, EMPTY_PAYMENT_SUMMARY } from "./payments.js";
 import type { AgentCursor } from "../lib/cursor.js";
 
@@ -212,7 +213,7 @@ function toServices(value: unknown): AgentService[] {
   );
 }
 
-function toSummary(network: NetworkName, row: AgentRow): Omit<AgentSummary, "liveness" | "receipts" | "payments"> {
+function toSummary(network: NetworkName, row: AgentRow): Omit<AgentSummary, "liveness" | "receipts" | "payments" | "reviewsGiven"> {
   return {
     network,
     chainId: NETWORKS[network].chainId,
@@ -265,6 +266,7 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
   const liveness = createLivenessRepository(db, schemas.app);
   const receipts = createReceiptRepository(db, schemas.app);
   const payments = createPaymentRepository(db, schemas);
+  const reviewsGiven = createReviewsGivenRepository(db, schemas);
   const addressesOf = (a: { agentId: string; owner: string; agentWallet: string | null }) => ({ agentId: a.agentId, owner: a.owner, wallet: a.agentWallet });
 
   /** Search and filters shared by the page query and the counts: no cursor, and no D19 rule. */
@@ -338,13 +340,15 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
         items: await (async () => {
           const summaries = pageRows.map((r) => toSummary(p.network, r));
           const chainId = NETWORKS[p.network].chainId;
-          const [live, rec, pay] = await Promise.all([
+          const [live, rec, pay, given] = await Promise.all([
             liveness.summaries(summaries.map((a) => a.services)),
-            receipts.providerSummaries(chainId, summaries.map((a) => a.agentId)),
+            receipts.summaries(chainId, summaries.map((a) => a.agentId)),
             payments.summaries(chainId, summaries.map(addressesOf)),
+            reviewsGiven.summaries(chainId, summaries.map(addressesOf)),
           ]);
           return summaries.map((a, i) => ({
             ...a,
+            reviewsGiven: given.get(a.agentId) ?? EMPTY_REVIEWS_GIVEN,
             liveness: live[i]!,
             receipts: rec.get(a.agentId) ?? EMPTY_RECEIPT_SUMMARY,
             payments: pay.get(a.agentId) ?? EMPTY_PAYMENT_SUMMARY,
@@ -452,13 +456,15 @@ export function createAgentRepository(db: Db, schemas: { indexer: string; app: s
       }));
 
       const summary = toSummary(network, row);
-      const [endpoints, rec, pay] = await Promise.all([
+      const [endpoints, rec, pay, given] = await Promise.all([
         liveness.forServices(summary.services),
-        receipts.providerSummaries(chainId, [summary.agentId]),
+        receipts.summaries(chainId, [summary.agentId]),
         payments.summaries(chainId, [addressesOf(summary)]),
+        reviewsGiven.summaries(chainId, [addressesOf(summary)]),
       ]);
       return {
         ...summary,
+        reviewsGiven: given.get(summary.agentId) ?? EMPTY_REVIEWS_GIVEN,
         liveness: liveness.summarize(endpoints),
         receipts: rec.get(summary.agentId) ?? EMPTY_RECEIPT_SUMMARY,
         payments: pay.get(summary.agentId) ?? EMPTY_PAYMENT_SUMMARY,

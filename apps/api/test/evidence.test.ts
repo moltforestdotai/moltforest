@@ -27,8 +27,9 @@ function agent(over: Partial<AgentDetail> = {}): AgentDetail {
     registeredBlock: "67821029",
     updatedAt: "2026-10-03T11:46:46.000Z",
     reputation: { feedbackCount: 0, revokedFeedbackCount: 0, uniqueReviewerCount: 0, lastFeedbackAt: null, counted: null },
+    reviewsGiven: { reviews: 0, verified: 0, lastAt: null },
     liveness: { endpoints: 1, checked: 1, up: 1, notPublic: 0, paymentRequired: 0, uptime7d: 1, checks7d: 120 },
-    receipts: { total: 1, coSigned: 1, anchored: 1, lastCompletedAt: "2026-10-03T11:48:35.000Z" },
+    receipts: { total: 1, coSigned: 1, anchored: 1, lastCompletedAt: "2026-10-03T11:48:35.000Z", coSignedAsClient: 0, lastAsClientAt: null },
     payments: { receivedFromOthers: 1, sent: 0, selfPayments: 0, receivedAmount: "0.01", sentAmount: "0", lastPaymentAt: "2026-10-03T11:48:36.000Z" },
     agentUri: "data:application/json;base64,...",
     agentUriTruncated: false,
@@ -80,13 +81,39 @@ describe("buildEvidenceProfile", () => {
     expect(p.reliability.jobSuccessRate).toMatchObject({ value: null, status: "not_measured" });
     expect(p.reliability.jobSuccessRate.provenance.note).toMatch(/not measurable yet/i);
     expect(p.reputation.countedReviews).toMatchObject({ value: null, status: "not_measured" });
-    expect(p.coverage.find((c) => c.category === "reliability")).toEqual({ category: "reliability", measured: 4, total: 6 });
+    expect(p.coverage.find((c) => c.category === "reliability")).toEqual({ category: "reliability", measured: 5, total: 7 });
+  });
+
+  it("shows an agent that only hires others as a client, with nothing to check for uptime", () => {
+    const p = buildEvidenceProfile(
+      agent({
+        agentId: "1988",
+        services: [],
+        serviceCount: 0,
+        endpoints: [],
+        liveness: { endpoints: 0, checked: 0, up: 0, notPublic: 0, paymentRequired: 0, uptime7d: null, checks7d: 0 },
+        receipts: { total: 0, coSigned: 0, anchored: 0, lastCompletedAt: null, coSignedAsClient: 1, lastAsClientAt: "2026-10-03T11:48:35.000Z" },
+        payments: { receivedFromOthers: 0, sent: 2, selfPayments: 0, receivedAmount: "0", sentAmount: "0.02", lastPaymentAt: "2026-10-03T11:48:36.000Z" },
+        reviewsGiven: { reviews: 1, verified: 1, lastAt: "2026-10-05T07:45:55.000Z" },
+      }),
+      EMPTY_STATS,
+      NOW,
+    );
+    expect(p.reliability.uptime7d).toMatchObject({ value: null, status: "not_measured" });
+    expect(p.reliability.uptime7d.provenance.note).toMatch(/declares no http\(s\) endpoint/);
+    expect(p.reliability.lastActivityAt).toMatchObject({ value: "2026-10-05T07:45:55.000Z", status: "measured" });
+    expect(p.reputation.reviewsGiven.value).toBe(1);
+    expect(p.reputation.verifiedReviewsGiven.value).toBe(1);
+    expect(p.verification.coSignedAsClient).toMatchObject({ value: 1, provenance: { api: "/v1/agents/testnet/1988/receipts?role=client" } });
+    const messages = Object.fromEntries(p.observations.map((o) => [o.code, o.message]));
+    expect(messages.LOW_HISTORY).toMatch(/As a client it sent 2 x402 payments and co-signed 1 receipt\.$/);
+    expect(messages.NO_RECEIPTS).toBe("No execution receipts where this agent is the provider (it co-signed 1 receipt as a client).");
   });
 
   it("lists neutral observations with evidence", () => {
     const p = buildEvidenceProfile(
       agent({
-        receipts: { total: 0, coSigned: 0, anchored: 0, lastCompletedAt: null },
+        receipts: { total: 0, coSigned: 0, anchored: 0, lastCompletedAt: null, coSignedAsClient: 0, lastAsClientAt: null },
         payments: { receivedFromOthers: 0, sent: 0, selfPayments: 3, receivedAmount: "0", sentAmount: "0", lastPaymentAt: "2026-01-01T00:00:00Z" },
         reputation: {
           feedbackCount: 7665,

@@ -4,7 +4,16 @@ import { proofTypeName } from "@moltforest/receipts";
 import { table, type Db } from "../db.js";
 import { isMissingRelation } from "./sync.js";
 
-export const EMPTY_RECEIPT_SUMMARY: AgentReceiptSummary = { total: 0, coSigned: 0, anchored: 0, lastCompletedAt: null };
+export const EMPTY_RECEIPT_SUMMARY: AgentReceiptSummary = {
+  total: 0,
+  coSigned: 0,
+  anchored: 0,
+  lastCompletedAt: null,
+  coSignedAsClient: 0,
+  lastAsClientAt: null,
+};
+
+const completedIso = (seconds: string | null) => (seconds === null ? null : new Date(Number(seconds) * 1000).toISOString());
 
 /** app.receipt row as node-postgres returns it (NUMERIC and INT8 as strings). */
 export interface ReceiptRow {
@@ -115,27 +124,46 @@ export function createReceiptRepository(db: Db, appSchema: string) {
      * Receipt counts per provider agent. Missing table (migrations not applied
      * yet) counts as no receipts, so agent pages keep working.
      */
-    async providerSummaries(chainId: number, agentIds: string[]): Promise<Map<string, AgentReceiptSummary>> {
+    /**
+     * Per agent: receipts where it is the provider, and receipts it co-signed
+     * as the client. A level-1 receipt only names its client, so it does not
+     * count for the client.
+     */
+    async summaries(chainId: number, agentIds: string[]): Promise<Map<string, AgentReceiptSummary>> {
       const out = new Map<string, AgentReceiptSummary>();
       if (agentIds.length === 0) return out;
+      const entry = (id: string) => out.get(id) ?? { ...EMPTY_RECEIPT_SUMMARY };
       try {
-        const r = await db.query<{ agent_id: string; total: string; co_signed: string; anchored: string; last_completed: string | null }>(
-          `SELECT provider_agent_id::text AS agent_id, count(*)::text AS total,
-                  count(*) FILTER (WHERE level = 2)::text AS co_signed,
-                  count(*) FILTER (WHERE anchor_status = 'anchored')::text AS anchored,
-                  max(completed_at)::text AS last_completed
-             FROM ${receipts}
-            WHERE chain_id = $1 AND provider_agent_id = ANY($2::numeric[])
-            GROUP BY provider_agent_id`,
-          [chainId, agentIds],
-        );
-        for (const row of r.rows) {
+        const [provider, client] = await Promise.all([
+          db.query<{ agent_id: string; total: string; co_signed: string; anchored: string; last_completed: string | null }>(
+            `SELECT provider_agent_id::text AS agent_id, count(*)::text AS total,
+                    count(*) FILTER (WHERE level = 2)::text AS co_signed,
+                    count(*) FILTER (WHERE anchor_status = 'anchored')::text AS anchored,
+                    max(completed_at)::text AS last_completed
+               FROM ${receipts}
+              WHERE chain_id = $1 AND provider_agent_id = ANY($2::numeric[])
+              GROUP BY provider_agent_id`,
+            [chainId, agentIds],
+          ),
+          db.query<{ agent_id: string; co_signed: string; last_completed: string | null }>(
+            `SELECT client_agent_id::text AS agent_id, count(*)::text AS co_signed, max(completed_at)::text AS last_completed
+               FROM ${receipts}
+              WHERE chain_id = $1 AND client_agent_id = ANY($2::numeric[]) AND level = 2
+              GROUP BY client_agent_id`,
+            [chainId, agentIds],
+          ),
+        ]);
+        for (const row of provider.rows) {
           out.set(row.agent_id, {
+            ...entry(row.agent_id),
             total: Number(row.total),
             coSigned: Number(row.co_signed),
             anchored: Number(row.anchored),
-            lastCompletedAt: row.last_completed === null ? null : new Date(Number(row.last_completed) * 1000).toISOString(),
+            lastCompletedAt: completedIso(row.last_completed),
           });
+        }
+        for (const row of client.rows) {
+          out.set(row.agent_id, { ...entry(row.agent_id), coSignedAsClient: Number(row.co_signed), lastAsClientAt: completedIso(row.last_completed) });
         }
       } catch (err) {
         if (!isMissingRelation(err)) throw err;

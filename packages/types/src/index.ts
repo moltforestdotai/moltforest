@@ -156,9 +156,23 @@ export interface AgentSummary {
   registeredBlock: string;
   updatedAt: string;
   reputation: AgentReputationSummary;
+  /** Reviews this agent wrote about other agents (its work as a client). */
+  reviewsGiven: AgentReviewsGiven;
   liveness: AgentLiveness;
   receipts: AgentReceiptSummary;
   payments: AgentPaymentSummary;
+}
+
+/**
+ * ERC-8004 reviews whose client is the agent's owner or agent wallet, about
+ * other agents; revoked reviews are left out. They show the agent's activity
+ * as a client and say nothing about the quality of its own work.
+ */
+export interface AgentReviewsGiven {
+  reviews: number;
+  /** Of those, counted reviews attached to a checked x402 payment (decision D39). */
+  verified: number;
+  lastAt: string | null;
 }
 
 /**
@@ -202,8 +216,21 @@ export interface PaymentView {
   payeeAgentCount: number;
   /** MoltForest receipts whose paymentRef is this transaction (the job this payment paid for). */
   receiptHashes: string[];
-  /** Reviews attached to this payment; their endpoint says what it paid for. */
-  reviews: { agentId: string; client: string; feedbackIndex: string; endpoint: string | null }[];
+  /**
+   * Reviews attached to this payment; their endpoint says what it paid for.
+   * `counted` with an attachment means the review is verified. The value
+   * fields are null while the indexer has not stored the review yet.
+   */
+  reviews: {
+    agentId: string;
+    client: string;
+    feedbackIndex: string;
+    endpoint: string | null;
+    counted: boolean;
+    value: string | null;
+    valueDecimals: number | null;
+    tag1: string | null;
+  }[];
 }
 
 export interface AgentPaymentView extends PaymentView {
@@ -239,6 +266,10 @@ export interface AgentReceiptSummary {
   anchored: number;
   /** Latest `completedAt` (ISO), or null. */
   lastCompletedAt: string | null;
+  /** Receipts this agent co-signed as the client (level 2): jobs it hired another agent for. */
+  coSignedAsClient: number;
+  /** Latest `completedAt` (ISO) of those, or null. */
+  lastAsClientAt: string | null;
 }
 
 export interface AgentUriHistoryEntry {
@@ -533,6 +564,8 @@ export interface EvidenceProfile {
     endpointsUp: Metric;
     uptime7d: Metric;
     endpointLatencyMs7d: Metric;
+    /** Latest of the agent's own actions: x402 payment, receipt (either role), review written, registration update. */
+    lastActivityAt: Metric<string>;
     /** Share of jobs that succeeded: not measurable yet (receipts exist only for completed jobs). */
     jobSuccessRate: Metric;
     /** Time from request to result: not measurable yet. */
@@ -547,6 +580,9 @@ export interface EvidenceProfile {
     verifiedReviews: Metric;
     notCounted: Metric<Partial<Record<ReviewExclusionReason, number>>>;
     lastReviewAt: Metric<string>;
+    /** Reviews the agent wrote about other agents (context, not about its own work). */
+    reviewsGiven: Metric;
+    verifiedReviewsGiven: Metric;
   };
   economic: {
     paymentsReceivedFromOthers: Metric;
@@ -565,6 +601,8 @@ export interface EvidenceProfile {
     /** 1 = provider signed, 2 = client co-signed; null without receipts. */
     highestReceiptLevel: Metric;
     lastReceiptAt: Metric<string>;
+    /** Receipts the agent co-signed as the client of another agent. */
+    coSignedAsClient: Metric;
   };
   observations: Observation[];
   /** How much MoltForest can see per category ("how much do we know?", not "how good is it?"). */

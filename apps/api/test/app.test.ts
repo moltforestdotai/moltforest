@@ -387,6 +387,10 @@ describe("API (integration)", () => {
       ]);
       expect(withFeedback.recentFeedback[1]!.notCounted?.evidence).toEqual({ reviewer: OWNER_B.toLowerCase(), role: "owner" });
       expect((await detail(4)).reputation.counted).toBeNull();
+
+      // Reviews given: agent 3's owner wrote agent 0's reviews (one revoked, so left out); agent 0 wrote none.
+      expect((await detail(3)).reviewsGiven).toEqual({ reviews: 1, verified: 0, lastAt: "2026-02-01T00:00:00.000Z" });
+      expect(withFeedback.reviewsGiven).toEqual({ reviews: 0, verified: 0, lastAt: null });
       expect(withFeedback.recentFeedback[1]).toMatchObject({ payment: null, paymentProblem: null, paidUnattached: false });
 
       // A review attached to a checked payment shows it, with the endpoint as its purpose; a failed check shows why.
@@ -630,7 +634,7 @@ describe("API (integration)", () => {
       expect((await request(app).get("/v1/agents?protocol=grpc")).status).toBe(400);
     });
 
-    run("counts receipts where the agent is the provider, not the client", async () => {
+    run("counts receipts as provider, and level-2 receipts the agent co-signed as client", async () => {
       const receipt = (n: number, provider: number, client: number, level: 1 | 2, status: string) =>
         db!.query(
           `INSERT INTO "${SCHEMA}".receipt (receipt_hash, chain_id, registry, task_id, client_agent_id, provider_agent_id, request_hash,
@@ -649,10 +653,20 @@ describe("API (integration)", () => {
           coSigned: 1,
           anchored: 1,
           lastCompletedAt: new Date((1_790_000_000 + 2) * 1000).toISOString(),
+          coSignedAsClient: 1,
+          lastAsClientAt: new Date((1_790_000_000 + 3) * 1000).toISOString(),
         });
-        expect(list.items.find((a) => a.agentId === "0")!.receipts).toEqual({ total: 0, coSigned: 0, anchored: 0, lastCompletedAt: null });
+        expect(list.items.find((a) => a.agentId === "0")!.receipts).toEqual({
+          total: 0,
+          coSigned: 0,
+          anchored: 0,
+          lastCompletedAt: null,
+          coSignedAsClient: 0,
+          lastAsClientAt: null,
+        });
+        // Agent 4 is the client of receipts 1 and 2, but only receipt 2 carries its co-signature.
         const detail = (await request(app).get("/v1/agents/mainnet/4")).body as AgentDetail;
-        expect(detail.receipts).toMatchObject({ total: 1, coSigned: 1 });
+        expect(detail.receipts).toMatchObject({ total: 1, coSigned: 1, coSignedAsClient: 1 });
       } finally {
         await db!.query(`DELETE FROM "${SCHEMA}".receipt`);
       }
@@ -692,7 +706,16 @@ describe("API (integration)", () => {
         );
         const reviewed = (await request(app).get(`/v1/payments/${tx}?network=mainnet`)).body as PaymentLookupResponse;
         expect(reviewed.items[0]!.reviews).toEqual([
-          { agentId: "4", client: "0x00000000000000000000000000000000000000c1", feedbackIndex: "1", endpoint: "https://svc.example/verify" },
+          {
+            agentId: "4",
+            client: "0x00000000000000000000000000000000000000c1",
+            feedbackIndex: "1",
+            endpoint: "https://svc.example/verify",
+            counted: true,
+            value: null,
+            valueDecimals: null,
+            tag1: null,
+          },
         ]);
         await db!.query(`DELETE FROM "${SCHEMA}".review_assessment WHERE agent_id = 4`);
 
