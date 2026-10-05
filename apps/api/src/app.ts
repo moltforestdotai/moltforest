@@ -15,6 +15,8 @@ import { activityRouter } from "./routes/activity.js";
 import { createActivityRepository } from "./repositories/activity.js";
 import type { ActivityHub } from "./services/activityHub.js";
 import { receiptsRouter } from "./routes/receipts.js";
+import { trustRouter } from "./routes/trust.js";
+import { createEvidenceRepository } from "./evidence/repository.js";
 import { paymentsRouter } from "./routes/payments.js";
 import { createPaymentRepository } from "./repositories/payments.js";
 import { createReceiptRepository } from "./repositories/receipts.js";
@@ -55,10 +57,12 @@ export function createApp({ config, db, chain, activityHub, receipts, logger }: 
 
   // Decision D15: every endpoint is free for now (x402 paywall arrives behind a flag).
   app.use(metaRouter(db, createSyncRepository(db, config.INDEXER_DB_SCHEMA), chain));
+  const agentRepository = createAgentRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA });
   app.use(
     "/v1/agents",
-    agentsRouter(createAgentRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA })),
+    agentsRouter(agentRepository),
   );
+  app.use("/v1/agents", trustRouter(agentRepository, createEvidenceRepository(db, config.APP_DB_SCHEMA)));
   app.use(
     "/v1/activity",
     activityRouter(createActivityRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA }), activityHub),

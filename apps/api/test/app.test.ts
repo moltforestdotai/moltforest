@@ -20,6 +20,7 @@ import type {
   ReceiptView,
   RecentReceiptsResponse,
   SyncStatus,
+  TrustResponse,
 } from "@moltforest/types";
 import { loadConfig } from "../src/config.js";
 import { createDb, type Db } from "../src/db.js";
@@ -385,6 +386,28 @@ describe("API (integration)", () => {
       ]);
       expect(withFeedback.recentFeedback[1]!.notCounted?.evidence).toEqual({ reviewer: OWNER_B.toLowerCase(), role: "owner" });
       expect((await detail(4)).reputation.counted).toBeNull();
+    });
+
+    run("returns the evidence profile with task context facts on /trust", async () => {
+      const res = await request(app).get("/v1/agents/mainnet/0/trust?minimumHistory=3&requiredProof=client-cosigned&maxLatencyMs=500&taskType=review");
+      expect(res.status).toBe(200);
+      const body = res.body as TrustResponse;
+      expect(body.profile).toMatchObject({
+        agentId: "0",
+        reputation: { reviews: { value: 5, status: "measured" }, countedReviews: { value: 0 }, notCounted: { value: { SELF_REVIEW: 1 } } },
+        reliability: { jobSuccessRate: { status: "not_measured" } },
+      });
+      expect(body.profile.observations.map((o) => o.code)).toContain("REVIEWS_NOT_COUNTED");
+      expect(body.context.facts.map((f) => [f.parameter, f.comparison])).toEqual([
+        ["minimumHistory", "below"],
+        ["maxLatencyMs", "not_measurable"],
+        ["requiredProof", "below"],
+        ["taskType", "mentioned"],
+      ]);
+      expect(body.note).toMatch(/no score and no verdict/);
+      expect((await request(app).get("/v1/agents/mainnet/0/trust?requiredProof=magic")).status).toBe(400);
+      expect((await request(app).get("/v1/agents/mainnet/0/trust?bogus=1")).status).toBe(400);
+      expect((await request(app).get("/v1/agents/mainnet/99/trust")).status).toBe(404);
     });
 
     run("404s for unknown agents and routes", async () => {

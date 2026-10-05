@@ -447,3 +447,132 @@ export interface ApiErrorBody {
     message: string;
   };
 }
+
+// ---------------------------------------------------------------------------
+// Evidence profile and trust queries (phase 6). Evidence, never a score or a
+// verdict (constraint C1); every metric says where it came from (C2).
+// ---------------------------------------------------------------------------
+
+/** Where a metric comes from: the API list of underlying records, the contract and events, the window and block range. */
+export interface Provenance {
+  /** MoltForest API path listing the records behind the metric. */
+  api?: string;
+  /** Contract the records come from, with its events or calls. */
+  contract?: { address: string; events: string[] };
+  /** e.g. "last 7 days", "all time". */
+  window?: string;
+  blockRange?: { from: string; to: string };
+  note?: string;
+}
+
+/** One number (or fact) with its provenance. `value` is null when MoltForest cannot measure it yet. */
+export interface Metric<T = number> {
+  value: T | null;
+  status: "measured" | "not_measured";
+  provenance: Provenance;
+}
+
+export type ObservationCode =
+  | "LOW_HISTORY"
+  | "STALE"
+  | "REVIEWS_NOT_COUNTED"
+  | "SELF_PAYMENTS_ONLY"
+  | "NO_RECEIPTS"
+  | "ENDPOINT_CHURN"
+  | "PROFILE_UNREACHABLE"
+  | "ENDPOINTS_DOWN"
+  | "ENDPOINTS_NOT_PUBLIC"
+  | "MARKED_INACTIVE";
+
+/** An observable condition worth a closer look; never an accusation (constraint C5). */
+export interface Observation {
+  code: ObservationCode;
+  severity: "info" | "notice" | "warning";
+  message: string;
+  provenance: Provenance;
+}
+
+export interface EvidenceProfile {
+  network: NetworkName;
+  agentId: string;
+  globalId: string;
+  name: string | null;
+  generatedAt: string;
+  identity: {
+    registeredAt: Metric<string>;
+    ageDays: Metric;
+    profileStatus: Metric<MetadataStatus>;
+    uriChanges: Metric;
+    agentWalletSet: Metric<boolean>;
+    declaredServices: Metric;
+    x402Support: Metric<boolean>;
+  };
+  reliability: {
+    endpoints: Metric;
+    endpointsUp: Metric;
+    uptime7d: Metric;
+    endpointLatencyMs7d: Metric;
+    /** Share of jobs that succeeded: not measurable yet (receipts exist only for completed jobs). */
+    jobSuccessRate: Metric;
+    /** Time from request to result: not measurable yet. */
+    jobLatencyMs: Metric;
+  };
+  reputation: {
+    reviews: Metric;
+    reviewers: Metric;
+    countedReviews: Metric;
+    countedReviewers: Metric;
+    notCounted: Metric<Partial<Record<ReviewExclusionReason, number>>>;
+    lastReviewAt: Metric<string>;
+  };
+  economic: {
+    paymentsReceivedFromOthers: Metric;
+    receivedUsdc: Metric<string>;
+    distinctPayers: Metric;
+    largestPaymentUsdc: Metric<string>;
+    paymentsSent: Metric;
+    selfPayments: Metric;
+    lastPaymentAt: Metric<string>;
+  };
+  verification: {
+    receipts: Metric;
+    coSignedReceipts: Metric;
+    anchoredReceipts: Metric;
+    receiptsWithPayment: Metric;
+    /** 1 = provider signed, 2 = client co-signed; null without receipts. */
+    highestReceiptLevel: Metric;
+    lastReceiptAt: Metric<string>;
+  };
+  observations: Observation[];
+  /** How much MoltForest can see per category ("how much do we know?", not "how good is it?"). */
+  coverage: { category: "identity" | "reliability" | "reputation" | "economic" | "verification"; measured: number; total: number }[];
+}
+
+/** Task context for a trust query (constraint C3). All optional. */
+export interface TaskContextQuery {
+  taskType?: string;
+  /** In USD (USDC). */
+  valueAtRisk?: number;
+  requiredProof?: "none" | "provider-signed" | "client-cosigned" | "validator" | "zk" | "tee";
+  maxLatencyMs?: number;
+  /** Observed jobs (receipts as provider) the caller wants to see. */
+  minimumHistory?: number;
+}
+
+/**
+ * One asked value next to what MoltForest observed. `comparison` compares the
+ * two numbers; it is not MoltForest's judgement of the agent.
+ */
+export interface ContextFact {
+  parameter: keyof TaskContextQuery;
+  asked: string | number;
+  observed: string | number | null;
+  comparison: "meets" | "below" | "above" | "mentioned" | "not_mentioned" | "not_measurable";
+  note: string;
+}
+
+export interface TrustResponse {
+  profile: EvidenceProfile;
+  context: { query: TaskContextQuery; facts: ContextFact[] };
+  note: string;
+}
