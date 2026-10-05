@@ -461,6 +461,19 @@ describe("API (integration)", () => {
       expect((await request(app).get("/mcp")).status).toBe(405);
     });
 
+    run("lets the website POST to /v1/evaluate cross-origin, and only the website", async () => {
+      const allowed = await request(app)
+        .options("/v1/evaluate")
+        .set("origin", "http://localhost:3000")
+        .set("access-control-request-method", "POST")
+        .set("access-control-request-headers", "content-type");
+      expect(allowed.status).toBe(204);
+      expect(allowed.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
+      expect(allowed.headers["access-control-allow-methods"]).toContain("POST");
+      const other = await request(app).options("/v1/evaluate").set("origin", "https://evil.example").set("access-control-request-method", "POST");
+      expect(other.headers["access-control-allow-origin"]).toBeUndefined();
+    });
+
     run("404s for unknown agents and routes", async () => {
       const missing = await request(app).get("/v1/agents/mainnet/99");
       expect(missing.status).toBe(404);

@@ -46,7 +46,8 @@ export function createApp({ config, db, chain, activityHub, receipts, logger }: 
 
   if (logger) app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === "/health" } }));
   app.use(helmet());
-  app.use(cors({ origin: config.CORS_ORIGINS, methods: ["GET"], maxAge: 600 }));
+  // POST for the website's Policy Playground (/v1/evaluate); still only from CORS_ORIGINS.
+  app.use(cors({ origin: config.CORS_ORIGINS, methods: ["GET", "POST"], maxAge: 600 }));
   app.use(
     rateLimit({
       windowMs: 60_000,
