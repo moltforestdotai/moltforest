@@ -637,3 +637,26 @@ export interface TrustResponse {
   context: { query: TaskContextQuery; facts: ContextFact[] };
   note: string;
 }
+
+/**
+ * Network-wide counts (GET /v1/stats), e.g. for the website's homepage: plain
+ * counts of what MoltForest has indexed, each with its source (constraint C2).
+ * They rate nothing (C1). Served from a cache up to a minute old.
+ */
+export interface NetworkStats {
+  network: NetworkName;
+  chainId: number;
+  generatedAt: string;
+  agents: { indexed: Metric };
+  reviews: {
+    /** Non-revoked ERC-8004 reviews. */
+    total: Metric;
+    /** Reviews that count after the reviewer checks (D31). */
+    counted: Metric;
+    /** Counted reviews attached to a checked x402 payment (D39). */
+    verified: Metric;
+  };
+  /** x402 settlements where an agent's owner or agent wallet is the payer or the payee. */
+  payments: { x402: Metric };
+  receipts: { total: Metric; coSigned: Metric; anchored: Metric };
+}

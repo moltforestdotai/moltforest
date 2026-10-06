@@ -16,6 +16,7 @@ import type {
   AgentListResponse,
   AgentPaymentsResponse,
   AgentReceiptsResponse,
+  NetworkStats,
   PaymentLookupResponse,
   ReceiptView,
   RecentReceiptsResponse,
@@ -79,7 +80,7 @@ async function setup(): Promise<void> {
   for (const t of ["Agent", "AgentUriChange", "Feedback", "envio_chains"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE envio."${t}" INCLUDING DEFAULTS)`);
   }
-  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt", "x402_payment", "agent_review_summary", "review_assessment"]) {
+  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt", "x402_payment", "payment_cursor", "payment_address", "agent_review_summary", "review_assessment"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE app."${t}" INCLUDING ALL)`);
   }
 
@@ -519,6 +520,69 @@ describe("API (integration)", () => {
 
       const test = (await request(app).get("/v1/sync-status?network=testnet")).body as SyncStatus;
       expect(test).toMatchObject({ indexed: false, indexer: null, chain: { error: "rpc down" }, missingAgents: null });
+    });
+
+    run("counts agents, reviews, x402 payments and receipts per network on /v1/stats", async () => {
+      const hash = (n: number) => `0x${String(n).padStart(64, "f")}`;
+      await db!.query(
+        `UPDATE "${SCHEMA}".agent_review_summary SET counted_reviews = 1, verified_reviews = 1, pending_reviewers = 2 WHERE chain_id = 143 AND agent_id = 0`,
+      );
+      for (const [chainId, n] of [[143, 1], [143, 2], [10143, 3]] as const) {
+        await db!.query(
+          `INSERT INTO "${SCHEMA}".x402_payment (chain_id, tx_hash, log_index, block_number, block_time, asset, payer, payee, amount, facilitator)
+           VALUES ($1, $2, 1, 4000, now(), '0xusdc', $3, $4, 10000, '0xfac')`,
+          [chainId, hash(n), OWNER_A, OWNER_B],
+        );
+      }
+      // Mainnet was scanned below block 4500 and one new address is still being backfilled; testnet was never scanned.
+      await db!.query(`INSERT INTO "${SCHEMA}".payment_cursor (chain_id, next_block) VALUES (143, 4500)`);
+      await db!.query(`INSERT INTO "${SCHEMA}".payment_address (chain_id, address, caught_up) VALUES (143, $1, true), (143, $2, false)`, [OWNER_A, OWNER_B]);
+      for (const [n, level, status] of [[11, 1, "queued"], [12, 2, "anchored"]] as const) {
+        await db!.query(
+          `INSERT INTO "${SCHEMA}".receipt (receipt_hash, chain_id, registry, task_id, client_agent_id, provider_agent_id, request_hash,
+             result_hash, payment_ref, started_at, completed_at, proof_type, proof_ref, level, provider_signature, provider_signer, anchor_status)
+           VALUES ($1, 10143, '0x00', '0x00', 0, 0, '0x00', '0x00', '0x00', 1790000000, 1790000000, 0, '0x00', $2, '0x00', '0x00', $3)`,
+          [hash(n), level, status],
+        );
+      }
+      try {
+        const main = (await request(app).get("/v1/stats")).body as NetworkStats;
+        expect(main).toMatchObject({ network: "mainnet", chainId: 143 });
+        expect(main.agents.indexed).toMatchObject({ value: 9, status: "measured", provenance: { blockRange: { from: "0", to: "4990" } } });
+        // Agent 0 has two reviews, one of them revoked.
+        expect([main.reviews.total.value, main.reviews.counted.value, main.reviews.verified.value]).toEqual([1, 1, 1]);
+        expect(main.reviews.counted.provenance.note).toContain("can still drop");
+        expect(main.payments.x402).toMatchObject({ value: 2, provenance: { blockRange: { from: "0", to: "4499" } } });
+        expect(main.payments.x402.provenance.note).toContain("can still grow");
+        expect(main.receipts.total).toMatchObject({ value: 0, status: "measured" });
+
+        const test = (await request(app).get("/v1/stats?network=testnet")).body as NetworkStats;
+        expect(test.agents.indexed.value).toBe(1);
+        // No indexer progress for testnet in this fixture: the count stands, without a block range.
+        expect(test.agents.indexed.provenance.blockRange).toBeUndefined();
+        // Testnet payments were never scanned (no cursor), so the stray row is not reported as a count.
+        expect(test.payments.x402).toMatchObject({ value: null, status: "not_measured" });
+        expect([test.receipts.total.value, test.receipts.coSigned.value, test.receipts.anchored.value]).toEqual([2, 1, 1]);
+
+        // Before the indexer and the migrations create their tables, nothing is measured yet.
+        const cold = createApp({
+          config: { INDEXER_DB_SCHEMA: "schema_that_does_not_exist", APP_DB_SCHEMA: "schema_that_does_not_exist", CORS_ORIGINS: [], RATE_LIMIT_PER_MINUTE: 10_000 },
+          db: db!,
+          chain: fakeChain,
+        });
+        const empty = await request(cold).get("/v1/stats");
+        expect(empty.status).toBe(200);
+        expect((empty.body as NetworkStats).agents.indexed).toMatchObject({ value: null, status: "not_measured" });
+        expect((empty.body as NetworkStats).payments.x402).toMatchObject({ value: null, status: "not_measured" });
+      } finally {
+        await db!.query(
+          `UPDATE "${SCHEMA}".agent_review_summary SET counted_reviews = 0, verified_reviews = 0, pending_reviewers = 0 WHERE chain_id = 143 AND agent_id = 0`,
+        );
+        await db!.query(`DELETE FROM "${SCHEMA}".x402_payment`);
+        await db!.query(`DELETE FROM "${SCHEMA}".payment_cursor`);
+        await db!.query(`DELETE FROM "${SCHEMA}".payment_address`);
+        await db!.query(`DELETE FROM "${SCHEMA}".receipt`);
+      }
     });
 
     run("counts x402 payments per agent: received from others, sent, and self-payments", async () => {

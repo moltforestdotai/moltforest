@@ -21,6 +21,8 @@ import { mcpHandler } from "./mcp/server.js";
 import { createEvidenceRepository } from "./evidence/repository.js";
 import { paymentsRouter } from "./routes/payments.js";
 import { createPaymentRepository } from "./repositories/payments.js";
+import { statsRouter } from "./routes/stats.js";
+import { createStatsRepository } from "./repositories/stats.js";
 import { createReceiptRepository } from "./repositories/receipts.js";
 import type { ReceiptNetworks } from "./services/receiptNetworks.js";
 import { errorHandler, notFound } from "./lib/errors.js";
@@ -91,6 +93,7 @@ export function createApp({ config, db, chain, activityHub, receipts, logger }: 
   );
 
   app.use("/v1", paymentsRouter(paymentRepository));
+  app.use("/v1", statsRouter(createStatsRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA })));
 
   // Hosted read-only MCP (phase 6): stateless Streamable HTTP, JSON responses.
   app.post(

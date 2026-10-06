@@ -14,9 +14,9 @@ apps/indexer   Envio HyperIndex (Docker)  ──writes──▶  Postgres schema
 apps/workers   enrichment (host): fetches remote agentURIs ──writes──▶  schema "app"
                                                           │ reads both
 apps/api       Express + TypeScript (host) ◀──────────────┘
-          │  REST: /v1/agents, /v1/receipts, /v1/sync-status, …
+          │  REST: /v1/agents, /v1/receipts, /v1/stats, …   MCP: /mcp
           ▼
-moltforest-web, agents (MCP later)
+moltforest-web, agents
 ```
 
 | Path | What it is |
@@ -98,6 +98,7 @@ pnpm dev:api                # http://localhost:4000
 | `GET /v1/activity?network=&limit=` | Recent on-chain activity (registrations, registration-file updates, reviews), newest first |
 | `GET /v1/activity/stream?network=` | Server-Sent Events: `activity` as blocks finish indexing, `status` as the indexer advances |
 | `GET /v1/sync-status?network=` | Indexer progress plus a reconciler check of the chain's highest agent id (`missingAgents` > 0 means the index is behind) |
+| `GET /v1/stats?network=` | Network-wide counts, each with its provenance: agents indexed; reviews (total, counted, verified); x402 payments; receipts (total, co-signed, anchored). What is not indexed yet is `not_measured`. Cached for a minute |
 | `POST /v1/receipts` | Submit a signed execution receipt (see below). `202` when stored, `200` when already known |
 | `GET /v1/agents/:network/:agentId/trust?taskType=&valueAtRisk=&requiredProof=&maxLatencyMs=&minimumHistory=` | Evidence profile: identity, reliability, reputation (counted), economic, verification, each metric with provenance; neutral observations; evidence coverage; and, for the given task context, each asked value next to the observed one. No score or verdict |
 | `POST /v1/evaluate` | `{ network, agentIds: [1–10], policy, context?, includeProfile? }`: applies the **caller's** policy (`minCountedReviewers`, `minReceipts`, `minReceiptLevel`, `minPaymentsFromOthers`, `minDistinctPayers`, `minUptime7d`, `maxEndpointLatencyMs`, `requireX402Support`, `requireActive`, `excludeObservations`, …) to each agent: every rule `met`, `not_met` or `not_measurable` with the observed value and provenance; `policyMet` is the caller's policy result |
