@@ -388,6 +388,102 @@ export interface AgentListResponse {
   totalIndexed: number;
 }
 
+/**
+ * Whether the wallet's first incoming MON transfer is known (decision D31).
+ * - found: the funder is known, so the wallet can be linked.
+ * - none: no visible incoming transfer, usually funding through a contract.
+ *   Nothing is known about this wallet's origin; it is not evidence of
+ *   independence.
+ * - pending: not looked up yet.
+ */
+export type WalletFundingStatus = "found" | "none" | "pending";
+
+/** One wallet in an agent's funding graph. */
+export interface FundingGraphNode {
+  address: string;
+  /**
+   * The agent's own addresses are drawn apart from the wallets that reviewed
+   * it. `funder` is a wallet that funded a reviewer without reviewing itself.
+   */
+  role: "owner" | "agentWallet" | "reviewer" | "funder";
+  /** The funding group this wallet belongs to; null before the agent is assessed. */
+  cluster: string | null;
+  fundingStatus: WalletFundingStatus;
+  reviews: number;
+  countedReviews: number;
+  /** Counted reviews backed by a checked x402 payment (decision D39). */
+  verifiedReviews: number;
+  /** Why this wallet's reviews do not count; null when at least one counts. */
+  notCountedReason: ReviewExclusionReason | null;
+}
+
+/** A first MON transfer linking two wallets: the provenance behind a cluster. */
+export interface FundingGraphFundingEdge {
+  /** The wallet that sent the first MON. */
+  from: string;
+  to: string;
+  txHash: string | null;
+  /** Set when the funded wallet later sent its remainder back to the funder. */
+  sweepTxHash: string | null;
+}
+
+/** Reviews a wallet wrote about this agent. */
+export interface FundingGraphReviewEdge {
+  from: string;
+  reviews: number;
+  countedReviews: number;
+}
+
+/** An x402 payment backing a counted review, which makes that review verified. */
+export interface FundingGraphPaymentEdge {
+  /** The payer, which is also the reviewer. */
+  from: string;
+  txHash: string;
+  amountUsdc: string;
+  receiptHash: string | null;
+  /** The service paid for: the review's purpose. */
+  endpoint: string | null;
+}
+
+/** A group of reviewer wallets linked by funding; a cluster counts as one reviewer. */
+export interface FundingGraphCluster {
+  root: string;
+  wallets: number;
+  reviews: number;
+  countedReviews: number;
+  /** The cluster includes this agent's owner or agent wallet. */
+  containsTarget: boolean;
+  /** The reason shared by the cluster's not-counted reviews, when there is one. */
+  notCountedReason: ReviewExclusionReason | null;
+}
+
+/**
+ * The wallets that reviewed one agent and how they are linked (decisions D31,
+ * D39), as a graph rather than a table. Nothing here is a verdict: edges carry
+ * the transactions they are drawn from (constraints C1, C2, C5).
+ */
+export interface FundingGraph {
+  network: NetworkName;
+  chainId: number;
+  agentId: string;
+  owner: string;
+  agentWallet: string | null;
+  /** Null until the reviews worker has assessed this agent; the graph is then unlabelled. */
+  assessedAt: string | null;
+  nodes: FundingGraphNode[];
+  /** Three layers drawn separately: who funded whom, who reviewed, who paid. */
+  edges: {
+    funding: FundingGraphFundingEdge[];
+    review: FundingGraphReviewEdge[];
+    payment: FundingGraphPaymentEdge[];
+  };
+  clusters: FundingGraphCluster[];
+  /** Most-reviewing wallets kept; the rest are summarised in `omitted`. */
+  limit: number;
+  /** Reviewer wallets left out because of `limit`; null when all of them fit. */
+  omitted: { wallets: number; reviews: number } | null;
+}
+
 export interface SyncStatus {
   network: NetworkName;
   chainId: number;

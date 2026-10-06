@@ -50,6 +50,13 @@
       "when": 1791185874711,
       "tag": "0006_tidy_jocasta",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791282647895,
+      "tag": "0007_minor_klaw",
+      "breakpoints": true
     }
   ]
 }

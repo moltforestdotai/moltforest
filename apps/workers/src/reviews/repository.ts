@@ -60,6 +60,32 @@ export function createReviewRepository(db: pg.Pool, schemas: { indexer: string; 
       }
     },
 
+    /**
+     * Stores the funding cluster each wallet ended up in, so the funding graph
+     * can be read back without redoing the union-find. Only rows whose group
+     * changed are written. Returns how many changed.
+     */
+    async saveClusterRoots(chainId: number, roots: Map<string, string>): Promise<number> {
+      const entries = [...roots];
+      let changed = 0;
+      for (let i = 0; i < entries.length; i += 1000) {
+        const chunk = entries.slice(i, i + 1000);
+        const values: unknown[] = [chainId];
+        const rows = chunk.map(([address, root], j) => {
+          values.push(address, root);
+          return `($${j * 2 + 2}, $${j * 2 + 3})`;
+        });
+        const r = await db.query(
+          `UPDATE ${funding} f SET cluster_root = v.root
+             FROM (VALUES ${rows.join(", ")}) AS v(address, root)
+            WHERE f.chain_id = $1 AND f.address = v.address AND f.cluster_root IS DISTINCT FROM v.root`,
+          values,
+        );
+        changed += r.rowCount ?? 0;
+      }
+      return changed;
+    },
+
     /** Non-revoked reviews on the chain. */
     async reviews(chainId: number): Promise<ReviewRow[]> {
       const r = await db.query<{ agent_id: string; client: string; feedback_index: string; block_number: string; ts: string }>(

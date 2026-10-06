@@ -248,11 +248,22 @@ export const walletFunding = app.table(
     sweepTx: text("sweep_tx"),
     /** Transactions this wallet sent, up to `checkedBlock`. */
     sentTxCount: integer("sent_tx_count"),
+    /**
+     * The wallet's funding cluster (decision D31): the lowest address of the
+     * union-find group it belongs to, written by the reviews worker so the
+     * funding graph can be read back without redoing the union-find. A wallet
+     * that links to nothing is its own root; null before the first assessment.
+     */
+    clusterRoot: text("cluster_root"),
     checkedBlock: bigint("checked_block", { mode: "number" }),
     addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
     checkedAt: timestamp("checked_at", { withTimezone: true }),
   },
-  (t) => [primaryKey({ columns: [t.chainId, t.address] }), index("wallet_funding_pending_idx").on(t.chainId).where(sql`status = 'pending'`)],
+  (t) => [
+    primaryKey({ columns: [t.chainId, t.address] }),
+    index("wallet_funding_pending_idx").on(t.chainId).where(sql`status = 'pending'`),
+    index("wallet_funding_cluster_idx").on(t.chainId, t.clusterRoot),
+  ],
 );
 
 /** Why a review is not counted (decision D31). Raw reviews are never hidden or deleted. */

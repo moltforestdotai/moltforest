@@ -16,6 +16,8 @@ import { createActivityRepository } from "./repositories/activity.js";
 import type { ActivityHub } from "./services/activityHub.js";
 import { receiptsRouter } from "./routes/receipts.js";
 import { trustRouter } from "./routes/trust.js";
+import { fundingGraphRouter } from "./routes/fundingGraph.js";
+import { createFundingGraphRepository } from "./repositories/fundingGraph.js";
 import { evaluateRouter } from "./routes/evaluate.js";
 import { mcpHandler } from "./mcp/server.js";
 import { createEvidenceRepository } from "./evidence/repository.js";
@@ -69,6 +71,10 @@ export function createApp({ config, db, chain, activityHub, receipts, logger }: 
   );
   const evidenceRepository = createEvidenceRepository(db, config.APP_DB_SCHEMA);
   app.use("/v1/agents", trustRouter(agentRepository, evidenceRepository));
+  app.use(
+    "/v1/agents",
+    fundingGraphRouter(createFundingGraphRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA })),
+  );
   app.use("/v1", evaluateRouter(agentRepository, evidenceRepository));
   app.use(
     "/v1/activity",

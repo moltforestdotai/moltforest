@@ -16,6 +16,7 @@ import type {
   AgentListResponse,
   AgentPaymentsResponse,
   AgentReceiptsResponse,
+  FundingGraph,
   NetworkStats,
   PaymentLookupResponse,
   ReceiptView,
@@ -80,7 +81,7 @@ async function setup(): Promise<void> {
   for (const t of ["Agent", "AgentUriChange", "Feedback", "envio_chains"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE envio."${t}" INCLUDING DEFAULTS)`);
   }
-  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt", "x402_payment", "payment_cursor", "payment_address", "agent_review_summary", "review_assessment"]) {
+  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt", "x402_payment", "payment_cursor", "payment_address", "agent_review_summary", "review_assessment", "wallet_funding"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE app."${t}" INCLUDING ALL)`);
   }
 
@@ -411,6 +412,81 @@ describe("API (integration)", () => {
         expect(failed.recentFeedback[1]).toMatchObject({ payment: null, paymentProblem: "the payment came after the review", paidUnattached: true });
       } finally {
         await db!.query(`UPDATE "${SCHEMA}".review_assessment SET link = NULL, paid_unattached = false WHERE chain_id = 143 AND agent_id = 0`);
+      }
+    });
+
+    run("returns the reviewer funding graph of one agent", async () => {
+      expect((await request(app).get("/v1/agents/mainnet/999/funding-graph")).status).toBe(404);
+
+      const rFunded = "0x0000000000000000000000000000000000000001";
+      const rCounted = "0x0000000000000000000000000000000000000002";
+      const rUnknown = "0x0000000000000000000000000000000000000003";
+      const fundingTx = `0x${"11".repeat(32)}`;
+      const sweepTx = `0x${"22".repeat(32)}`;
+      const payTx = `0x${"33".repeat(32)}`;
+      const hash = `0x${"00".repeat(32)}`;
+      const tx = `0x${"ef".repeat(32)}`;
+
+      const insertReview = async (client: string, index: number, counted: boolean, reason: string | null, link: object | null) => {
+        await db!.query(
+          `INSERT INTO "${SCHEMA}"."Feedback" (id, chain_id, agent_id, client, feedback_index, value, value_decimals, tag1, tag2, endpoint,
+             feedback_uri, feedback_hash, revoked, response_count, block_number, "timestamp", tx_hash)
+           VALUES ($1, 143, '4', $2, $3, 80, 0, 'starred', '', '', '', $4, false, 0, 2000, '2026-03-01T00:00:00Z', $5)`,
+          [`4_${client}_${index}`, client, index, hash, tx],
+        );
+        await db!.query(
+          `INSERT INTO "${SCHEMA}".review_assessment (chain_id, agent_id, client, feedback_index, counted, reason, evidence, link)
+           VALUES (143, 4, lower($1), $2, $3, $4, $5::jsonb, $6::jsonb)`,
+          [client, index, counted, reason, reason ? JSON.stringify({ funder: OWNER_A.toLowerCase(), fundingTx }) : null, link ? JSON.stringify(link) : null],
+        );
+      };
+
+      await insertReview(rFunded, 1, false, "FUNDED_BY_TARGET", null);
+      await insertReview(rCounted, 2, true, null, { by: "payment_proof", paymentTx: payTx, amount: "1000000", receiptHash: null, endpoint: "https://g.example" });
+      await insertReview(rUnknown, 3, true, null, null);
+      await db!.query(
+        `INSERT INTO "${SCHEMA}".wallet_funding (chain_id, address, status, funder, funding_tx, sweep_tx, cluster_root)
+         VALUES (143, $1, 'found', $2, $3, $4, $1),
+                (143, $5, 'found', NULL, NULL, NULL, $5),
+                (143, $6, 'none', NULL, NULL, NULL, $6),
+                (143, $2, 'none', NULL, NULL, NULL, $1)`,
+        [rFunded, OWNER_A.toLowerCase(), fundingTx, sweepTx, rCounted, rUnknown],
+      );
+      await db!.query(
+        `INSERT INTO "${SCHEMA}".agent_review_summary (chain_id, agent_id, counted_reviews, counted_reviewers, excluded, pending_reviewers, verified_reviews, assessment_hash, assessed_at)
+         VALUES (143, 4, 2, 2, '{"FUNDED_BY_TARGET": 1}', 0, 1, 'g', '2026-10-06T00:00:00Z')`,
+      );
+
+      try {
+        const res = await request(app).get("/v1/agents/mainnet/4/funding-graph");
+        expect(res.status).toBe(200);
+        const body = res.body as FundingGraph;
+        expect(body).toMatchObject({
+          network: "mainnet",
+          chainId: 143,
+          agentId: "4",
+          owner: OWNER_A.toLowerCase(),
+          omitted: null,
+        });
+        expect(body.nodes.map((n) => [n.address, n.role, n.notCountedReason, n.verifiedReviews, n.fundingStatus])).toEqual(
+          expect.arrayContaining([
+            [OWNER_A.toLowerCase(), "owner", null, 0, "none"],
+            [rFunded, "reviewer", "FUNDED_BY_TARGET", 0, "found"],
+            [rCounted, "reviewer", null, 1, "found"],
+            [rUnknown, "reviewer", null, 0, "none"],
+          ]),
+        );
+        expect(body.edges.funding).toEqual([{ from: OWNER_A.toLowerCase(), to: rFunded, txHash: fundingTx, sweepTxHash: sweepTx }]);
+        expect(body.edges.payment).toEqual([{ from: rCounted, txHash: payTx, amountUsdc: "1", receiptHash: null, endpoint: "https://g.example" }]);
+        expect(body.clusters.some((c) => c.containsTarget && c.wallets >= 2)).toBe(true);
+
+        const capped = (await request(app).get("/v1/agents/mainnet/4/funding-graph?limit=1")).body as FundingGraph;
+        expect(capped.omitted).toEqual({ wallets: 2, reviews: expect.any(Number) });
+      } finally {
+        await db!.query(`DELETE FROM "${SCHEMA}"."Feedback" WHERE chain_id = 143 AND agent_id = '4'`);
+        await db!.query(`DELETE FROM "${SCHEMA}".review_assessment WHERE chain_id = 143 AND agent_id = 4`);
+        await db!.query(`DELETE FROM "${SCHEMA}".agent_review_summary WHERE chain_id = 143 AND agent_id = 4`);
+        await db!.query(`DELETE FROM "${SCHEMA}".wallet_funding WHERE chain_id = 143`);
       }
     });
 

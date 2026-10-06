@@ -54,6 +54,25 @@ describe("assessReviews", () => {
     expect(summaries[0]).toMatchObject({ countedReviews: 2, countedReviewers: 2 });
   });
 
+  it("gives wallets of one cluster the same root, and a lone wallet its own", () => {
+    const F = addr(0xf0);
+    const funding = new Map<string, Funding>([1, 2].map((n) => [addr(n), funded(F)]));
+    const { clusterRoots } = assessReviews([review("1", addr(1)), review("1", addr(2)), review("1", addr(3))], agents("1"), funding, opts);
+    expect(clusterRoots.get(addr(1))).toBe(clusterRoots.get(addr(2)));
+    expect(clusterRoots.get(addr(1))).toBe(clusterRoots.get(F));
+    // A reviewer with no known funding links to nothing, so it is its own cluster.
+    expect(clusterRoots.get(addr(3))).toBe(addr(3));
+  });
+
+  it("does not put wallets of a hub in one cluster", () => {
+    const HUB = addr(0xbb);
+    const funding = new Map<string, Funding>([1, 2, 3, 4].map((n) => [addr(n), funded(HUB)]));
+    const reviews = [review("1", addr(1)), review("1", addr(2)), review("2", addr(3)), review("3", addr(4))];
+    const { clusterRoots } = assessReviews(reviews, agents("1", "2", "3"), funding, opts);
+    expect(clusterRoots.get(addr(1))).toBe(addr(1));
+    expect(clusterRoots.get(addr(2))).toBe(addr(2));
+  });
+
   it("does not link wallets through a hub (a funder whose wallets reviewed many agents)", () => {
     const HUB = addr(0xbb);
     const funding = new Map<string, Funding>([1, 2, 3, 4].map((n) => [addr(n), funded(HUB)]));

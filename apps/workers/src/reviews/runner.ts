@@ -24,6 +24,8 @@ export interface ReviewsStats {
   hubs: number;
   filesRead: number;
   verifiedReviews: number;
+  /** Wallets whose funding cluster changed since the last pass. */
+  clustersWritten: number;
 }
 
 /**
@@ -41,6 +43,7 @@ export async function runReviewsTick(deps: { repo: ReviewRepository; hs: HyperSy
     hubs: 0,
     filesRead: 0,
     verifiedReviews: 0,
+    clustersWritten: 0,
   };
 
   const pending = await repo.pendingWallets(opts.chainId, opts.fundingBatch ?? 5000);
@@ -80,10 +83,11 @@ export async function runReviewsTick(deps: { repo: ReviewRepository; hs: HyperSy
     repo.assessmentHashes(opts.chainId),
   ]);
   const links = opts.files ? await repo.linkContext(opts.chainId, [...new Set(reviews.map((r) => r.client))]) : undefined;
-  const { labels, summaries, hubs } = assessReviews(reviews, agents, funding, { ...DEFAULT_ASSESS_OPTIONS, ...opts }, links);
+  const { labels, summaries, hubs, clusterRoots } = assessReviews(reviews, agents, funding, { ...DEFAULT_ASSESS_OPTIONS, ...opts }, links);
   stats.verifiedReviews = summaries.reduce((n, s) => n + s.verifiedReviews, 0);
   stats.hubs = hubs.size;
   stats.agentsAssessed = summaries.length;
+  stats.clustersWritten = await repo.saveClusterRoots(opts.chainId, clusterRoots);
 
   const labelsByAgent = new Map<string, typeof labels>();
   for (const l of labels) {

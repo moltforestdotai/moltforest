@@ -166,7 +166,7 @@ export function assessReviews(
   funding: Map<string, Funding>,
   options: AssessOptions = DEFAULT_ASSESS_OPTIONS,
   links?: LinkContext,
-): { labels: ReviewLabel[]; summaries: AgentSummary[]; hubs: Set<string> } {
+): { labels: ReviewLabel[]; summaries: AgentSummary[]; hubs: Set<string>; clusterRoots: Map<string, string> } {
   const hubs = findHubs(reviews, funding, options.hubMinAgents);
 
   // Every known funding fact links two wallets, so chains (owner → wallet → reviewer) join too.
@@ -174,6 +174,19 @@ export function assessReviews(
   for (const [wallet, f] of funding) {
     if (f.funder && !hubs.has(f.funder)) clusters.union(wallet, f.funder);
   }
+
+  // The group each wallet ended up in, kept so the funding graph can be read
+  // back later without redoing the union-find. A lone wallet is its own root.
+  const clusterRoots = new Map<string, string>();
+  const root = (wallet: string) => {
+    if (!clusterRoots.has(wallet)) clusterRoots.set(wallet, clusters.find(wallet));
+  };
+  for (const [wallet, f] of funding) {
+    root(wallet);
+    // Funders are drawn in the graph too, so they need their group as well.
+    if (f.funder) root(f.funder);
+  }
+  for (const r of reviews) root(r.client);
 
   const byAgent = new Map<string, ReviewRow[]>();
   for (const r of reviews) {
@@ -301,5 +314,5 @@ export function assessReviews(
     });
     labels.push(...agentLabels);
   }
-  return { labels, summaries, hubs };
+  return { labels, summaries, hubs, clusterRoots };
 }
