@@ -2,6 +2,7 @@
   "name": "@moltforest/db",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Drizzle schema and migrations for MoltForest's own tables (Postgres schema \"app\")",
   "type": "module",
   "exports": {

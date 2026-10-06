@@ -175,3 +175,9 @@ After changing `apps/indexer/schema.graphql` or `config.yaml`, run `pnpm indexer
 - The public Monad RPC limits `eth_getLogs` to 100 blocks per request and keeps no historical state. History therefore comes from HyperSync, not RPC.
 - Every table is per chain (`chain_id` column), so agent #17 on mainnet and #17 on testnet are separate rows.
 - The indexer image installs `ca-certificates`: Envio's native HTTP client needs the system CA store, otherwise RPC calls fail TLS verification.
+
+## License
+
+MIT © 2026 Jarpa Labs. See [LICENSE](LICENSE).
+
+The indexer is built with Envio HyperIndex, which has its own license and is not covered by the MIT License. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

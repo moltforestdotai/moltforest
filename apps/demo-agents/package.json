@@ -2,6 +2,7 @@
   "name": "@moltforest/demo-agents",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "MoltForest demo agents on Monad testnet: paid x402 services that sign execution receipts",
   "type": "module",
   "scripts": {

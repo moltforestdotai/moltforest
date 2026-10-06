@@ -1,6 +1,7 @@
 {
   "name": "moltforest",
   "private": true,
+  "license": "MIT",
   "description": "MoltForest backend: ERC-8004 indexer, trust API, and workers for the agent economy on Monad",
   "type": "module",
   "packageManager": "pnpm@11.13.0",

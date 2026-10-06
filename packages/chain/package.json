@@ -2,6 +2,7 @@
   "name": "@moltforest/chain",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Monad network config, ERC-8004 registry addresses and chain helpers",
   "type": "module",
   "exports": {

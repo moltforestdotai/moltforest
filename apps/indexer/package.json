@@ -2,6 +2,7 @@
   "name": "@moltforest/indexer",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Envio HyperIndex indexer for the ERC-8004 Identity and Reputation registries on Monad",
   "type": "module",
   "packageManager": "pnpm@11.13.0",

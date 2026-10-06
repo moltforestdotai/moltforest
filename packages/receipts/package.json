@@ -2,6 +2,7 @@
   "name": "@moltforest/receipts",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "EIP-712 execution receipts: types, JSON format, hashing, signing and signature checks",
   "type": "module",
   "exports": {

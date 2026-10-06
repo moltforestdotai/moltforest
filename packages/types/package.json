@@ -2,6 +2,7 @@
   "name": "@moltforest/types",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Public MoltForest API contract (response shapes). The web app mirrors this file.",
   "type": "module",
   "exports": {

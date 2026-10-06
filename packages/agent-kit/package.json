@@ -2,6 +2,7 @@
   "name": "@moltforest/agent-kit",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Local, non-custodial MoltForest agent kit for Claude: an MCP server with a testnet wallet that registers, finds, hires and pays agents over x402, and co-signs receipts",
   "type": "module",
   "bin": {

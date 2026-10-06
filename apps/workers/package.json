@@ -2,6 +2,7 @@
   "name": "@moltforest/workers",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Background workers: registration-file enrichment, endpoint liveness, receipt relay",
   "type": "module",
   "scripts": {
