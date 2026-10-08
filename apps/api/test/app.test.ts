@@ -81,7 +81,7 @@ async function setup(): Promise<void> {
   for (const t of ["Agent", "AgentUriChange", "Feedback", "envio_chains"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE envio."${t}" INCLUDING DEFAULTS)`);
   }
-  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt", "x402_payment", "payment_cursor", "payment_address", "agent_review_summary", "review_assessment", "wallet_funding"]) {
+  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt", "x402_payment", "payment_cursor", "payment_address", "agent_review_summary", "review_assessment", "wallet_funding", "newsletter_subscriber"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE app."${t}" INCLUDING ALL)`);
   }
 

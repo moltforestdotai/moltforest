@@ -45,6 +45,7 @@ const app = createApp({
     submitPerMinute: config.RECEIPT_SUBMIT_PER_MINUTE,
     maxFutureSeconds: config.RECEIPT_MAX_FUTURE_SECONDS,
   },
+  newsletterSubmitPerMinute: config.NEWSLETTER_SUBMIT_PER_MINUTE,
   logger,
 });
 const server = app.listen(config.API_PORT, () => {

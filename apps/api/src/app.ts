@@ -26,6 +26,8 @@ import { createPaymentRepository } from "./repositories/payments.js";
 import { statsRouter } from "./routes/stats.js";
 import { createStatsRepository } from "./repositories/stats.js";
 import { createReceiptRepository } from "./repositories/receipts.js";
+import { createNewsletterRepository } from "./repositories/newsletter.js";
+import { newsletterRouter } from "./routes/newsletter.js";
 import type { ReceiptNetworks } from "./services/receiptNetworks.js";
 import { errorHandler, notFound } from "./lib/errors.js";
 
@@ -37,12 +39,14 @@ export interface AppDeps {
   activityHub?: ActivityHub;
   /** Receipt submission; without networks, POST /v1/receipts answers 503 and reads still work. */
   receipts?: { networks: ReceiptNetworks; submitPerMinute: number; maxFutureSeconds: number };
+  /** Newsletter signup rate (per IP per minute); defaults to 5. */
+  newsletterSubmitPerMinute?: number;
   logger?: Logger;
 }
 
 const rateLimited = { error: { code: "rate_limited", message: "Too many requests, slow down." } };
 
-export function createApp({ config, db, chain, activityHub, receipts, logger }: AppDeps): Express {
+export function createApp({ config, db, chain, activityHub, receipts, newsletterSubmitPerMinute, logger }: AppDeps): Express {
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -100,6 +104,19 @@ export function createApp({ config, db, chain, activityHub, receipts, logger }: 
 
   app.use("/v1", paymentsRouter(paymentRepository));
   app.use("/v1", statsRouter(createStatsRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA })));
+  app.use(
+    "/v1",
+    newsletterRouter(
+      createNewsletterRepository(db, config.APP_DB_SCHEMA),
+      rateLimit({
+        windowMs: 60_000,
+        limit: newsletterSubmitPerMinute ?? 5,
+        standardHeaders: "draft-8",
+        legacyHeaders: false,
+        message: rateLimited,
+      }),
+    ),
+  );
 
   // Hosted read-only MCP (phase 6): stateless Streamable HTTP, JSON responses.
   app.post(
