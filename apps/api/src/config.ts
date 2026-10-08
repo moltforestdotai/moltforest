@@ -35,6 +35,8 @@ const EnvSchema = z.object({
   RECEIPT_REGISTRY_MAINNET: address.optional(),
   RECEIPT_SUBMIT_PER_MINUTE: z.coerce.number().int().min(1).default(30),
   RECEIPT_MAX_FUTURE_SECONDS: z.coerce.number().int().min(0).max(86_400).default(300),
+  /** Footer newsletter signups; kept low to limit address harvesting. */
+  NEWSLETTER_SUBMIT_PER_MINUTE: z.coerce.number().int().min(1).default(5),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 

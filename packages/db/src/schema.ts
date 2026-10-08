@@ -323,6 +323,22 @@ export const chainScanCursor = app.table(
 );
 
 /**
+ * Marketing newsletter signups (footer "Stay in the loop"). Email is stored
+ * lowercased; duplicates are rejected at the unique constraint so resubscribes
+ * are idempotent. No mailing ESP yet — this table is the retention source.
+ */
+export const newsletterSubscriber = app.table(
+  "newsletter_subscriber",
+  {
+    email: text("email").primaryKey(),
+    /** Where the signup came from (e.g. footer). */
+    source: text("source").notNull().default("footer"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("newsletter_subscriber_created_idx").on(t.createdAt)],
+);
+
+/**
  * ERC-8004 feedback files (the review's feedbackURI), fetched once and checked
  * against feedbackHash. Only the facts MoltForest uses are kept: the
  * proofOfPayment, an executionReceipt hash and the endpoint (the purpose).
