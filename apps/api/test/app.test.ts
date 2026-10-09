@@ -81,7 +81,7 @@ async function setup(): Promise<void> {
   for (const t of ["Agent", "AgentUriChange", "Feedback", "envio_chains"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE envio."${t}" INCLUDING DEFAULTS)`);
   }
-  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt", "x402_payment", "payment_cursor", "payment_address", "agent_review_summary", "review_assessment", "wallet_funding", "newsletter_subscriber"]) {
+  for (const t of ["agent_profile", "endpoint_status", "endpoint_uptime_daily", "receipt", "x402_payment", "payment_cursor", "payment_address", "agent_review_summary", "review_assessment", "wallet_funding", "newsletter_subscriber", "nansen_wallet", "nansen_relation"]) {
     await db.query(`CREATE TABLE ${s}."${t}" (LIKE app."${t}" INCLUDING ALL)`);
   }
 
@@ -487,6 +487,73 @@ describe("API (integration)", () => {
         await db!.query(`DELETE FROM "${SCHEMA}".review_assessment WHERE chain_id = 143 AND agent_id = 4`);
         await db!.query(`DELETE FROM "${SCHEMA}".agent_review_summary WHERE chain_id = 143 AND agent_id = 4`);
         await db!.query(`DELETE FROM "${SCHEMA}".wallet_funding WHERE chain_id = 143`);
+      }
+    });
+
+    run("adds Nansen labels and the links MoltForest uses to the funding graph (decision D47)", async () => {
+      const rA = "0x00000000000000000000000000000000000000a1";
+      const rB = "0x00000000000000000000000000000000000000b2";
+      const signer = "0x00000000000000000000000000000000000000c3";
+      const exchange = "0x00000000000000000000000000000000000000e4";
+      const factory = "0x00000000000000000000000000000000000000f5";
+      const tx = (b: string) => `0x${b.repeat(32)}`;
+
+      for (const [i, client] of [rA, rB].entries()) {
+        await db!.query(
+          `INSERT INTO "${SCHEMA}"."Feedback" (id, chain_id, agent_id, client, feedback_index, value, value_decimals, tag1, tag2, endpoint,
+             feedback_uri, feedback_hash, revoked, response_count, block_number, "timestamp", tx_hash)
+           VALUES ($1, 143, '4', $2, 1, 90, 0, 'starred', '', '', '', $3, false, 0, 3000, '2026-03-02T00:00:00Z', $4)`,
+          [`4_${client}_1`, client, tx("00"), tx("ef")],
+        );
+        await db!.query(
+          `INSERT INTO "${SCHEMA}".review_assessment (chain_id, agent_id, client, feedback_index, counted, reason, evidence)
+           VALUES (143, 4, $1, 1, $2, $3, $4::jsonb)`,
+          [client, i === 0, i === 0 ? null : "COORDINATED_CLUSTER", i === 0 ? null : JSON.stringify({ nansen: [{ address: signer, relation: "Signer", tx: tx("c3") }] })],
+        );
+      }
+      await db!.query(
+        `INSERT INTO "${SCHEMA}".wallet_funding (chain_id, address, status, funder, funding_tx, cluster_root)
+         VALUES (143, $1, 'none', NULL, NULL, $1), (143, $2, 'found', $3, $4, $1)`,
+        [rA, rB, exchange, tx("e4")],
+      );
+      await db!.query(
+        `INSERT INTO "${SCHEMA}".nansen_wallet (chain_id, address, status, relation_count, attempts, fetched_at, next_fetch_at)
+         VALUES (143, $1, 'ok', 2, 1, '2026-10-09T10:00:00Z', 'infinity'), (143, $2, 'ok', 2, 1, '2026-10-09T11:00:00Z', 'infinity')`,
+        [rA, rB],
+      );
+      await db!.query(
+        `INSERT INTO "${SCHEMA}".nansen_relation (chain_id, wallet, related, relation, label, tx_hash, fetched_at) VALUES
+           (143, $1, $3, 'Signer', NULL, $6, now()),
+           (143, $1, $5, 'Deployed by', 'Account Factory', $7, now()),
+           (143, $2, $3, 'Signer', NULL, $8, now()),
+           (143, $2, $4, 'First Funder', 'Binance 14', $9, now())`,
+        [rA, rB, signer, exchange, factory, tx("c3"), tx("f5"), tx("c4"), tx("e4")],
+      );
+
+      try {
+        const body = (await request(app).get("/v1/agents/mainnet/4/funding-graph")).body as FundingGraph;
+        // Signer links are drawn; the first funder our scan found too is the funding edge already; deployments are not used.
+        expect(body.edges.nansen).toEqual([
+          { from: signer, to: rA, relation: "Signer", kind: "control", txHash: tx("c3") },
+          { from: signer, to: rB, relation: "Signer", kind: "control", txHash: tx("c4") },
+        ]);
+        expect(body.edges.funding).toContainEqual({ from: exchange, to: rB, txHash: tx("e4"), sweepTxHash: null });
+        const byAddress = new Map(body.nodes.map((n) => [n.address, n]));
+        expect(byAddress.get(signer)).toMatchObject({ role: "linked", nansenLabel: null });
+        expect(byAddress.get(exchange)).toMatchObject({ role: "funder", nansenLabel: "Binance 14" });
+        expect(byAddress.has(factory)).toBe(false);
+        expect(body.nansen).toEqual({ lookedUp: 2, wallets: 2, lastFetchedAt: "2026-10-09T11:00:00.000Z" });
+
+        // Nansen has no testnet data, so a testnet graph says nothing about Nansen.
+        const testnet = (await request(app).get("/v1/agents/testnet/0/funding-graph")).body as FundingGraph;
+        expect(testnet.nansen).toBeNull();
+        expect(testnet.edges.nansen).toEqual([]);
+      } finally {
+        await db!.query(`DELETE FROM "${SCHEMA}"."Feedback" WHERE chain_id = 143 AND agent_id = '4'`);
+        await db!.query(`DELETE FROM "${SCHEMA}".review_assessment WHERE chain_id = 143 AND agent_id = 4`);
+        await db!.query(`DELETE FROM "${SCHEMA}".wallet_funding WHERE chain_id = 143`);
+        await db!.query(`DELETE FROM "${SCHEMA}".nansen_wallet WHERE chain_id = 143`);
+        await db!.query(`DELETE FROM "${SCHEMA}".nansen_relation WHERE chain_id = 143`);
       }
     });
 

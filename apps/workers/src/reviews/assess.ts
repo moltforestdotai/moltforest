@@ -14,8 +14,15 @@
  *
  * Reviews are never hidden: every review keeps its row, with a neutral reason
  * and the funding transactions as evidence (constraints C2, C5).
+ *
+ * Nansen's related wallets add links (decision D47), each with its
+ * transaction: a first funder Nansen sees where our scan sees none (funding
+ * through a contract), and the key or multisig that controls a wallet. A
+ * funding link follows the hub rule above; a control link always links.
+ * An address Nansen labels as an exchange, bridge or faucet links nothing.
  */
 import { createHash } from "node:crypto";
+import type { NansenLinkKind } from "@moltforest/chain";
 
 export type ReviewExclusion = "SELF_REVIEW" | "FUNDED_BY_TARGET" | "REPEAT_REVIEWER" | "COORDINATED_CLUSTER";
 
@@ -103,6 +110,30 @@ export interface LinkContext {
   onChainEndpoints?: Map<string, string>;
 }
 
+/** A link between two wallets from Nansen's related wallets (decision D47). */
+export interface WalletLink {
+  /** The reviewer wallet that was looked up. */
+  wallet: string;
+  /** The related address: its first funder, the key that signs for it… */
+  other: string;
+  /** Nansen's words, e.g. "Signer". */
+  relation: string;
+  kind: NansenLinkKind;
+  tx: string | null;
+}
+
+/** What Nansen adds to the assessment (decision D47); empty where Nansen has no data. */
+export interface NansenFacts {
+  links: WalletLink[];
+  /** Addresses Nansen labels as an exchange, bridge or faucet, with the label: they fund strangers, so they link nothing. */
+  services: Map<string, string>;
+}
+
+export const NO_NANSEN_FACTS: NansenFacts = { links: [], services: new Map() };
+
+/** Plain code-unit order, the same on every machine (no locale). */
+const byCode = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
 export const reviewKey = (agentId: string, client: string, feedbackIndex: string) => `${agentId}:${client}:${feedbackIndex}`;
 const sameChain = (chainId: string | null, expected: number) => !chainId || chainId.split(":").at(-1) === String(expected);
 
@@ -147,15 +178,22 @@ class UnionFind {
   }
 }
 
-/** Funders whose wallets reviewed at least `hubMinAgents` distinct agents. */
-export function findHubs(reviews: ReviewRow[], funding: Map<string, Funding>, hubMinAgents: number): Set<string> {
+/**
+ * Funders whose wallets reviewed at least `hubMinAgents` distinct agents. A
+ * first funder Nansen reports counts like one from our own scan; control
+ * links never make a hub, since one key controls all of its wallets.
+ */
+export function findHubs(reviews: ReviewRow[], funding: Map<string, Funding>, hubMinAgents: number, linksByWallet?: Map<string, WalletLink[]>): Set<string> {
   const agentsByFunder = new Map<string, Set<string>>();
-  for (const r of reviews) {
-    const funder = funding.get(r.client)?.funder;
-    if (!funder) continue;
+  const add = (funder: string, agentId: string) => {
     let set = agentsByFunder.get(funder);
     if (!set) agentsByFunder.set(funder, (set = new Set()));
-    set.add(r.agentId);
+    set.add(agentId);
+  };
+  for (const r of reviews) {
+    const funder = funding.get(r.client)?.funder;
+    if (funder) add(funder, r.agentId);
+    for (const l of linksByWallet?.get(r.client) ?? []) if (l.kind === "funding") add(l.other, r.agentId);
   }
   return new Set([...agentsByFunder].filter(([, agents]) => agents.size >= hubMinAgents).map(([funder]) => funder));
 }
@@ -166,14 +204,26 @@ export function assessReviews(
   funding: Map<string, Funding>,
   options: AssessOptions = DEFAULT_ASSESS_OPTIONS,
   links?: LinkContext,
+  nansen: NansenFacts = NO_NANSEN_FACTS,
 ): { labels: ReviewLabel[]; summaries: AgentSummary[]; hubs: Set<string>; clusterRoots: Map<string, string> } {
-  const hubs = findHubs(reviews, funding, options.hubMinAgents);
+  const linksByWallet = new Map<string, WalletLink[]>();
+  for (const l of nansen.links) {
+    if (l.wallet === l.other) continue;
+    let list = linksByWallet.get(l.wallet);
+    if (!list) linksByWallet.set(l.wallet, (list = []));
+    list.push(l);
+  }
+  const hubs = findHubs(reviews, funding, options.hubMinAgents, linksByWallet);
+  // Exchanges, bridges and faucets fund strangers: like hubs, they link nothing.
+  for (const service of nansen.services.keys()) hubs.add(service);
+  const linkUsed = (l: WalletLink) => (l.kind === "funding" ? !hubs.has(l.other) : !nansen.services.has(l.other));
 
   // Every known funding fact links two wallets, so chains (owner → wallet → reviewer) join too.
   const clusters = new UnionFind();
   for (const [wallet, f] of funding) {
     if (f.funder && !hubs.has(f.funder)) clusters.union(wallet, f.funder);
   }
+  for (const list of linksByWallet.values()) for (const l of list) if (linkUsed(l)) clusters.union(l.wallet, l.other);
 
   // The group each wallet ended up in, kept so the funding graph can be read
   // back later without redoing the union-find. A lone wallet is its own root.
@@ -186,6 +236,7 @@ export function assessReviews(
     // Funders are drawn in the graph too, so they need their group as well.
     if (f.funder) root(f.funder);
   }
+  for (const list of linksByWallet.values()) for (const l of list) root(l.other);
   for (const r of reviews) root(r.client);
 
   const byAgent = new Map<string, ReviewRow[]>();
@@ -272,6 +323,16 @@ export function assessReviews(
       if (!f || f.status === "pending") pending.add(r.client);
       const root = clusters.find(r.client);
       const fundingEvidence = f?.funder ? { funder: f.funder, fundingTx: f.fundingTx ?? null, ...(f.sweepTx ? { sweepTx: f.sweepTx } : {}) } : {};
+      // This wallet's Nansen links that took part, in a fixed order: the provenance of a Nansen-made link.
+      const nansenLinks = (linksByWallet.get(r.client) ?? []).filter((l) => linkUsed(l) || targetAddrs.has(l.other));
+      const nansenEvidence = nansenLinks.length
+        ? {
+            nansen: nansenLinks
+              .map((l) => ({ address: l.other, relation: l.relation, tx: l.tx }))
+              .sort((a, b) => byCode(a.relation, b.relation) || byCode(a.address, b.address)),
+          }
+        : {};
+      const nansenDirect = nansenLinks.some((l) => targetAddrs.has(l.other));
       const label = (reason: ReviewExclusion | null, evidence: Record<string, unknown> | null): ReviewLabel => ({
         agentId,
         client: r.client,
@@ -285,14 +346,14 @@ export function assessReviews(
 
       if (targetAddrs.has(r.client)) {
         agentLabels.push(label("SELF_REVIEW", { reviewer: r.client, role: r.client === target?.owner ? "owner" : "agentWallet" }));
-      } else if ((f?.funder && targetAddrs.has(f.funder)) || targetRoots.has(root)) {
+      } else if ((f?.funder && targetAddrs.has(f.funder)) || nansenDirect || targetRoots.has(root)) {
         // Direct funding always links, even when the owner funds so widely that it counts as a hub.
-        const direct = !!f?.funder && targetAddrs.has(f.funder);
-        agentLabels.push(label("FUNDED_BY_TARGET", { ...fundingEvidence, link: direct ? "direct" : "cluster" }));
+        const direct = (!!f?.funder && targetAddrs.has(f.funder)) || nansenDirect;
+        agentLabels.push(label("FUNDED_BY_TARGET", { ...fundingEvidence, ...nansenEvidence, link: direct ? "direct" : "cluster" }));
       } else if (lastCounted.has(r.client) && r.timestamp - lastCounted.get(r.client)! < windowSeconds) {
         agentLabels.push(label("REPEAT_REVIEWER", { windowDays: options.repeatWindowDays }));
       } else if (countedRoot.has(root) && countedRoot.get(root) !== r.client) {
-        agentLabels.push(label("COORDINATED_CLUSTER", { ...fundingEvidence, clusterSize: clusterSize.get(root), countedAs: countedRoot.get(root) }));
+        agentLabels.push(label("COORDINATED_CLUSTER", { ...fundingEvidence, ...nansenEvidence, clusterSize: clusterSize.get(root), countedAs: countedRoot.get(root) }));
       } else {
         agentLabels.push(label(null, null));
         lastCounted.set(r.client, r.timestamp);

@@ -31,9 +31,9 @@ export const CHURN_THRESHOLD = 3;
 
 const NOT_COUNTED_TEXT: Record<ReviewExclusionReason, string> = {
   SELF_REVIEW: "written by the agent's own owner or agent wallet",
-  FUNDED_BY_TARGET: "from wallets funded by the agent's owner or agent wallet",
+  FUNDED_BY_TARGET: "from wallets funded by the agent's owner or agent wallet, or sharing a signing key with it",
   REPEAT_REVIEWER: "repeat reviews from the same wallet within 30 days",
-  COORDINATED_CLUSTER: "from wallets sharing a funder with another reviewer (counted as one)",
+  COORDINATED_CLUSTER: "from wallets sharing a funder or a signing key with another reviewer (counted as one)",
 };
 
 const measured = <T>(value: T, provenance: Provenance): Metric<T> => ({ value, status: "measured", provenance });

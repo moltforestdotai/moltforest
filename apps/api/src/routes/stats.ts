@@ -15,7 +15,8 @@ const notes = (...parts: (string | undefined)[]) => parts.filter(Boolean).join("
 
 const REVIEW_CHECKS =
   "A review is not counted when it is a self-review, comes from a wallet the agent's owner funded, repeats the same wallet within 30 days, " +
-  "or comes from a wallet sharing a funder with another reviewer. Each agent page lists every review with its reason.";
+  "or comes from a wallet sharing a funder with another reviewer. On mainnet, Nansen's related wallets add links the funding scan cannot see, " +
+  "such as a signing key shared by two wallets. Each agent page lists every review with its reason.";
 
 /** Pure: raw counts in, counts with their provenance out (C2). No score of anything (C1). */
 export function buildNetworkStats(network: NetworkName, c: NetworkCounts, now: Date): NetworkStats {

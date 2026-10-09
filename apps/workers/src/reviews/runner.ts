@@ -26,6 +26,8 @@ export interface ReviewsStats {
   verifiedReviews: number;
   /** Wallets whose funding cluster changed since the last pass. */
   clustersWritten: number;
+  /** Nansen links taken into account (decision D47). */
+  nansenLinks: number;
 }
 
 /**
@@ -44,6 +46,7 @@ export async function runReviewsTick(deps: { repo: ReviewRepository; hs: HyperSy
     filesRead: 0,
     verifiedReviews: 0,
     clustersWritten: 0,
+    nansenLinks: 0,
   };
 
   const pending = await repo.pendingWallets(opts.chainId, opts.fundingBatch ?? 5000);
@@ -77,13 +80,15 @@ export async function runReviewsTick(deps: { repo: ReviewRepository; hs: HyperSy
 
   const reviews = await repo.reviews(opts.chainId);
   const agentIds = [...new Set(reviews.map((r) => r.agentId))];
-  const [agents, funding, hashes] = await Promise.all([
+  const [agents, funding, hashes, nansen] = await Promise.all([
     repo.agentAddresses(opts.chainId, agentIds),
     repo.funding(opts.chainId),
     repo.assessmentHashes(opts.chainId),
+    repo.nansenFacts(opts.chainId),
   ]);
+  stats.nansenLinks = nansen.links.length;
   const links = opts.files ? await repo.linkContext(opts.chainId, [...new Set(reviews.map((r) => r.client))]) : undefined;
-  const { labels, summaries, hubs, clusterRoots } = assessReviews(reviews, agents, funding, { ...DEFAULT_ASSESS_OPTIONS, ...opts }, links);
+  const { labels, summaries, hubs, clusterRoots } = assessReviews(reviews, agents, funding, { ...DEFAULT_ASSESS_OPTIONS, ...opts }, links, nansen);
   stats.verifiedReviews = summaries.reduce((n, s) => n + s.verifiedReviews, 0);
   stats.hubs = hubs.size;
   stats.agentsAssessed = summaries.length;

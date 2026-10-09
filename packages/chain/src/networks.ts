@@ -20,6 +20,11 @@ export interface NetworkConfig {
    * undefined until deployed, which keeps receipt endpoints disabled.
    */
   receiptRegistry?: { address: `0x${string}`; deployBlock: number };
+  /**
+   * The chain's name in Nansen's API (decision D47). Undefined where Nansen
+   * has no data, which keeps the Nansen lookups off for that network.
+   */
+  nansenChain?: string;
 }
 
 export const NETWORKS: Record<NetworkName, NetworkConfig> = {
@@ -32,6 +37,7 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     identityRegistry: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
     reputationRegistry: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
     usdc: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
+    nansenChain: "monad",
   },
   testnet: {
     name: "testnet",
