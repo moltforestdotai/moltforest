@@ -28,6 +28,7 @@
     "sync:registration": "node scripts/sync-registration.mjs",
     "dev:api": "pnpm --filter @moltforest/api dev",
     "dev:workers": "pnpm --filter @moltforest/workers dev",
+    "scores:publish-epoch": "pnpm --filter @moltforest/scores publish-epoch",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test"
   }

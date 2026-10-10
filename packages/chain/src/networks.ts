@@ -20,6 +20,18 @@ export interface NetworkConfig {
    * undefined until deployed, which keeps receipt endpoints disabled.
    */
   receiptRegistry?: { address: `0x${string}`; deployBlock: number };
+  /**
+   * Floor 3 ScoreRegistry (epoch Merkle roots). Testnet only until filled after deploy.
+   */
+  scoreRegistry?: { address: `0x${string}`; deployBlock: number };
+  /**
+   * Our ERC-8183 Agentic Commerce deploy on testnet (QNTX mainnet instance is not used).
+   */
+  agenticCommerce?: { address: `0x${string}`; deployBlock: number };
+  /**
+   * ScoreGateHook attached to testnet ERC-8183 jobs.
+   */
+  scoreGateHook?: { address: `0x${string}`; deployBlock: number };
 }
 
 export const NETWORKS: Record<NetworkName, NetworkConfig> = {
@@ -44,6 +56,12 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     usdc: "0x534b2f3A21130d7a60830c2Df862319e593943A3",
     // Deployed 2026-09-30, tx 0xfa900ba70c52562a1609e7de32972d57d820a3b9729e3317aa8dee66638c3a26.
     receiptRegistry: { address: "0x4d2a256fCaAc8e52e4B91e977EF6dDD56E980f98", deployBlock: 67037698 },
+    // Deployed 2026-10-09, tx 0x3b9943758042d0c69cb5ef02acb226361d66580ca56ad204c754111835d93751.
+    scoreRegistry: { address: "0x7d86EdFEdbE012F7fcE72A95F51fEbEa2f215785", deployBlock: 69566892 },
+    // Deployed 2026-10-09 (QNTX ERC8183 vendor), tx 0x70f7962d0819787d717c5a6fc52fb12465698c89c9f223a21a2545931ba0b7d9.
+    agenticCommerce: { address: "0xa3062BA91612782020EA0310De0e068D9bcEFF6a", deployBlock: 69568083 },
+    // Deployed 2026-10-09, tx 0xf447861f60965b82562e99c4c8a348de31c34b4ec116a12e315ca97e1c025e16.
+    scoreGateHook: { address: "0xbd5f1114092A92EF24Aa3ebE00e3c462f572eBFB", deployBlock: 69568091 },
   },
 };
 
