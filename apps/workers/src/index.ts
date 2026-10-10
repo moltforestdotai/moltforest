@@ -6,6 +6,7 @@
  * - payments:   indexes x402 USDC settlements touching agent addresses (app.x402_payment)
  * - reviews:    looks up reviewer funding and decides which reviews count (app.agent_review_summary)
  * - receipt events: records receipts anchored on the ReceiptRegistry by anyone (app.receipt, source "chain")
+ * - nansen:     asks Nansen how mainnet reviewer wallets are related (app.nansen_relation)
  */
 import { pino, type Logger } from "pino";
 import { createPool } from "@moltforest/db";
@@ -27,6 +28,9 @@ import { createReviewRepository } from "./reviews/repository.js";
 import { runReviewsTick } from "./reviews/runner.js";
 import { createReceiptEventRepository } from "./receiptEvents/repository.js";
 import { runReceiptEventsTick } from "./receiptEvents/runner.js";
+import { createNansenClient } from "./nansen/client.js";
+import { createNansenRepository } from "./nansen/repository.js";
+import { runNansenTick } from "./nansen/runner.js";
 
 const config = loadConfig();
 const logger = pino({ level: config.LOG_LEVEL });
@@ -201,6 +205,40 @@ const receiptEvents = () => {
   });
 };
 
+/** One Nansen loop per network Nansen covers (Monad mainnet; decision D47); off without an API key. */
+const nansen = () => {
+  const log = logger.child({ worker: "nansen" });
+  if (!config.NANSEN_ENABLED) return [];
+  if (!config.NANSEN_API_KEY) {
+    log.info("Nansen lookups off: NANSEN_API_KEY is not set");
+    return [];
+  }
+  const client = createNansenClient({ apiKey: config.NANSEN_API_KEY, baseUrl: config.NANSEN_BASE_URL, timeoutMs: config.NANSEN_TIMEOUT_MS });
+  const repo = createNansenRepository(db, schemas);
+  return NETWORK_NAMES.flatMap((name) => {
+    const { chainId, nansenChain } = NETWORKS[name];
+    if (!nansenChain) return [];
+    const netLog = log.child({ network: name });
+    return [
+      loop(`nansen:${name}`, netLog, config.NANSEN_POLL_SECONDS * 1000, async () => {
+        const stats = await runNansenTick(
+          { repo, client, logger: netLog },
+          {
+            chainId,
+            nansenChain,
+            dailyLookups: config.NANSEN_DAILY_LOOKUPS,
+            batchSize: config.NANSEN_BATCH_SIZE,
+            delayMs: config.NANSEN_REQUEST_DELAY_MS,
+            maxAttempts: 4,
+            focusAgents: config.NANSEN_FOCUS_AGENTS,
+          },
+        );
+        return { selected: stats.selected, full: stats.stoppedBy === null && stats.selected >= config.NANSEN_BATCH_SIZE, stats };
+      }),
+    ];
+  });
+};
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     logger.info(`${signal} received; finishing current batches`);
@@ -208,5 +246,13 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-await Promise.all([enrichment(), config.LIVENESS_ENABLED ? liveness() : Promise.resolve(), ...relays(), ...payments(), ...reviews(), ...receiptEvents()]);
+await Promise.all([
+  enrichment(),
+  config.LIVENESS_ENABLED ? liveness() : Promise.resolve(),
+  ...relays(),
+  ...payments(),
+  ...reviews(),
+  ...receiptEvents(),
+  ...nansen(),
+]);
 await db.end();
