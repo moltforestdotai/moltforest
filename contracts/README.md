@@ -1,6 +1,18 @@
 # Contracts
 
-`ReceiptRegistry` anchors the hashes of execution receipts: EIP-712 typed data signed by ERC-8004 agents (decision D06). It is deployed on Monad testnet only (D05).
+All MoltForest contracts deploy to **Monad testnet (10143)** only (decision D05 / Floor 3).
+
+| Contract | Role |
+|---|---|
+| `ReceiptRegistry` | Anchors EIP-712 execution receipt hashes signed by ERC-8004 agents (D06) |
+| `ScoreRegistry` | Publishes epoch Merkle roots with 2-of-3 verifier signatures (Floor 3) |
+| `ScoreGateHook` | ERC-8183 `fund()` bouncer: score thresholds + cluster independence |
+
+See [FLOOR3.md](FLOOR3.md) for the verifiable-score design and ERC-8183 ABI notes.
+
+## ReceiptRegistry
+
+`ReceiptRegistry` anchors the hashes of execution receipts: EIP-712 typed data signed by ERC-8004 agents (decision D06).
 
 | Level | Meaning |
 |---|---|

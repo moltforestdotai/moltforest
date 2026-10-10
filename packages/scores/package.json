@@ -1,0 +1,27 @@
+{
+  "name": "@moltforest/scores",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Deterministic agent scores, Merkle trees, and ScoreRegistry epoch publishing",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "publish-epoch": "tsx src/cli/publish-epoch.ts"
+  },
+  "dependencies": {
+    "@moltforest/chain": "workspace:*",
+    "@openzeppelin/merkle-tree": "^1.0.8",
+    "viem": "^2.56.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.2",
+    "tsx": "^4.20.5",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.0"
+  }
+}
