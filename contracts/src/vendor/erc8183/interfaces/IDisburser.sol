@@ -9,11 +9,5 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 ///      `type(IDisburser).interfaceId` (`0x74dbc6a9`). A reverting
 ///      `onDisbursement` rolls back the parent settlement, including fees.
 interface IDisburser is IERC165 {
-    function onDisbursement(
-        uint256 jobId,
-        bytes4 selector,
-        address token,
-        uint256 amount,
-        bytes calldata data
-    ) external;
+    function onDisbursement(uint256 jobId, bytes4 selector, address token, uint256 amount, bytes calldata data) external;
 }

@@ -114,12 +114,7 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     event EvaluatorFeeUpdated(uint256 oldFeeBp, uint256 newFeeBp);
     event TreasuryUpdated(address oldTreasury, address newTreasury);
 
-    constructor(
-        uint256 platformFeeBp_,
-        uint256 evaluatorFeeBp_,
-        address treasury_,
-        address owner_
-    ) Ownable(owner_) {
+    constructor(uint256 platformFeeBp_, uint256 evaluatorFeeBp_, address treasury_, address owner_) Ownable(owner_) {
         if (treasury_ == address(0)) revert ZeroAddress();
         if (platformFeeBp_ + evaluatorFeeBp_ > MAX_FEE_BP) revert FeeTooHigh();
         platformFeeBp = platformFeeBp_;
@@ -133,9 +128,7 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC165
-    function supportsInterface(
-        bytes4 interfaceId
-    ) external pure override returns (bool) {
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IERC8183).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
@@ -186,20 +179,11 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC8183
-    function setProvider(
-        uint256 jobId,
-        address provider,
-        uint256 agentId
-    ) external nonReentrant {
+    function setProvider(uint256 jobId, address provider, uint256 agentId) external nonReentrant {
         _setProvider(msg.sender, jobId, provider, agentId);
     }
 
-    function _setProvider(
-        address actor,
-        uint256 jobId,
-        address provider,
-        uint256 agentId
-    ) internal {
+    function _setProvider(address actor, uint256 jobId, address provider, uint256 agentId) internal {
         JobStorage storage job = _job(jobId);
         if (actor != job.client) revert Unauthorized();
         if (job.status != JobStatus.Open) revert InvalidStatus(job.status);
@@ -215,18 +199,11 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC8183
-    function setPayoutReceiver(
-        uint256 jobId,
-        address payoutReceiver
-    ) external nonReentrant {
+    function setPayoutReceiver(uint256 jobId, address payoutReceiver) external nonReentrant {
         _setPayoutReceiver(msg.sender, jobId, payoutReceiver);
     }
 
-    function _setPayoutReceiver(
-        address actor,
-        uint256 jobId,
-        address payoutReceiver
-    ) internal {
+    function _setPayoutReceiver(address actor, uint256 jobId, address payoutReceiver) internal {
         JobStorage storage job = _job(jobId);
         if (actor != job.provider) revert Unauthorized();
         if (job.status != JobStatus.Open) revert InvalidStatus(job.status);
@@ -238,22 +215,13 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC8183
-    function setBudget(
-        uint256 jobId,
-        address token,
-        uint256 amount,
-        bytes calldata optParams
-    ) external nonReentrant {
+    function setBudget(uint256 jobId, address token, uint256 amount, bytes calldata optParams) external nonReentrant {
         _setBudget(msg.sender, jobId, token, amount, optParams);
     }
 
-    function _setBudget(
-        address actor,
-        uint256 jobId,
-        address token,
-        uint256 amount,
-        bytes calldata optParams
-    ) internal {
+    function _setBudget(address actor, uint256 jobId, address token, uint256 amount, bytes calldata optParams)
+        internal
+    {
         JobStorage storage job = _job(jobId);
         if (actor != job.provider) revert Unauthorized();
         if (job.status != JobStatus.Open) revert InvalidStatus(job.status);
@@ -273,12 +241,10 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC8183
-    function fund(
-        uint256 jobId,
-        address expectedToken,
-        uint256 expectedBudget,
-        bytes calldata optParams
-    ) external nonReentrant {
+    function fund(uint256 jobId, address expectedToken, uint256 expectedBudget, bytes calldata optParams)
+        external
+        nonReentrant
+    {
         _fund(msg.sender, jobId, expectedToken, expectedBudget, optParams);
     }
 
@@ -320,20 +286,11 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC8183
-    function submit(
-        uint256 jobId,
-        bytes32 deliverable,
-        bytes calldata optParams
-    ) external nonReentrant {
+    function submit(uint256 jobId, bytes32 deliverable, bytes calldata optParams) external nonReentrant {
         _submit(msg.sender, jobId, deliverable, optParams);
     }
 
-    function _submit(
-        address actor,
-        uint256 jobId,
-        bytes32 deliverable,
-        bytes calldata optParams
-    ) internal {
+    function _submit(address actor, uint256 jobId, bytes32 deliverable, bytes calldata optParams) internal {
         JobStorage storage job = _job(jobId);
         if (actor != job.provider) revert Unauthorized();
         if (job.status != JobStatus.Funded && !(job.status == JobStatus.Open && job.budget == 0)) {
@@ -359,20 +316,11 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC8183
-    function complete(
-        uint256 jobId,
-        bytes32 reason,
-        bytes calldata optParams
-    ) external nonReentrant {
+    function complete(uint256 jobId, bytes32 reason, bytes calldata optParams) external nonReentrant {
         _complete(msg.sender, jobId, reason, optParams);
     }
 
-    function _complete(
-        address actor,
-        uint256 jobId,
-        bytes32 reason,
-        bytes calldata optParams
-    ) internal {
+    function _complete(address actor, uint256 jobId, bytes32 reason, bytes calldata optParams) internal {
         JobStorage storage job = _job(jobId);
         if (actor != job.evaluator) revert Unauthorized();
         if (job.status != JobStatus.Submitted) revert InvalidStatus(job.status);
@@ -388,20 +336,11 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC8183
-    function reject(
-        uint256 jobId,
-        bytes32 reason,
-        bytes calldata optParams
-    ) external nonReentrant {
+    function reject(uint256 jobId, bytes32 reason, bytes calldata optParams) external nonReentrant {
         _reject(msg.sender, jobId, reason, optParams);
     }
 
-    function _reject(
-        address actor,
-        uint256 jobId,
-        bytes32 reason,
-        bytes calldata optParams
-    ) internal {
+    function _reject(address actor, uint256 jobId, bytes32 reason, bytes calldata optParams) internal {
         JobStorage storage job = _job(jobId);
         if (job.status != JobStatus.Open && job.status != JobStatus.Funded && job.status != JobStatus.Submitted) {
             revert InvalidStatus(job.status);
@@ -433,9 +372,7 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC8183
-    function claimRefund(
-        uint256 jobId
-    ) external nonReentrant {
+    function claimRefund(uint256 jobId) external nonReentrant {
         JobStorage storage job = _job(jobId);
         if (job.status != JobStatus.Open && job.status != JobStatus.Funded && job.status != JobStatus.Submitted) {
             revert InvalidStatus(job.status);
@@ -463,12 +400,10 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC8183
-    function submitClaim(
-        uint256 jobId,
-        uint256 cumulativeAmount,
-        bytes32 deliverable,
-        bytes calldata optParams
-    ) external nonReentrant {
+    function submitClaim(uint256 jobId, uint256 cumulativeAmount, bytes32 deliverable, bytes calldata optParams)
+        external
+        nonReentrant
+    {
         _submitClaim(msg.sender, jobId, cumulativeAmount, deliverable, optParams);
     }
 
@@ -503,12 +438,10 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC8183
-    function settleClaim(
-        uint256 jobId,
-        uint256 cumulativeAmount,
-        bytes32 deliverable,
-        bytes calldata optParams
-    ) external nonReentrant {
+    function settleClaim(uint256 jobId, uint256 cumulativeAmount, bytes32 deliverable, bytes calldata optParams)
+        external
+        nonReentrant
+    {
         _settleClaim(msg.sender, jobId, cumulativeAmount, deliverable, optParams);
     }
 
@@ -540,12 +473,10 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC8183
-    function approveClaim(
-        uint256 jobId,
-        uint256 cumulativeAmount,
-        bytes32 deliverable,
-        bytes calldata optParams
-    ) external nonReentrant {
+    function approveClaim(uint256 jobId, uint256 cumulativeAmount, bytes32 deliverable, bytes calldata optParams)
+        external
+        nonReentrant
+    {
         _approveClaim(msg.sender, jobId, cumulativeAmount, deliverable, optParams);
     }
 
@@ -616,34 +547,25 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
         _hookAfter(job.hook, jobId, this.rejectClaim.selector, data);
     }
 
-    function setPlatformFee(
-        uint256 newFeeBp
-    ) external onlyOwner {
+    function setPlatformFee(uint256 newFeeBp) external onlyOwner {
         if (newFeeBp + evaluatorFeeBp > MAX_FEE_BP) revert FeeTooHigh();
         emit PlatformFeeUpdated(platformFeeBp, newFeeBp);
         platformFeeBp = newFeeBp;
     }
 
-    function setEvaluatorFee(
-        uint256 newFeeBp
-    ) external onlyOwner {
+    function setEvaluatorFee(uint256 newFeeBp) external onlyOwner {
         if (platformFeeBp + newFeeBp > MAX_FEE_BP) revert FeeTooHigh();
         emit EvaluatorFeeUpdated(evaluatorFeeBp, newFeeBp);
         evaluatorFeeBp = newFeeBp;
     }
 
-    function setTreasury(
-        address newTreasury
-    ) external onlyOwner {
+    function setTreasury(address newTreasury) external onlyOwner {
         if (newTreasury == address(0)) revert ZeroAddress();
         emit TreasuryUpdated(treasury, newTreasury);
         treasury = newTreasury;
     }
 
-    function setHookWhitelist(
-        address hook,
-        bool status
-    ) external onlyOwner {
+    function setHookWhitelist(address hook, bool status) external onlyOwner {
         if (hook == address(0)) revert ZeroAddress();
         whitelistedHooks[hook] = status;
         emit HookWhitelistUpdated(hook, status);
@@ -653,18 +575,13 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     /// @dev Allowlist does not prove plain ERC-20 semantics. FoT, rebasing,
     ///      ERC-777/1363 hooks, and pausable/blacklist tokens can still break
     ///      accounting after `fund`. Admin must vet tokens.
-    function setPaymentTokenAllowed(
-        address token,
-        bool status
-    ) external onlyOwner {
+    function setPaymentTokenAllowed(address token, bool status) external onlyOwner {
         if (token == address(0)) revert ZeroAddress();
         allowedPaymentTokens[token] = status;
         emit PaymentTokenAllowlistUpdated(token, status);
     }
 
-    function batchDetachHook(
-        uint256[] calldata jobIds
-    ) external onlyOwner {
+    function batchDetachHook(uint256[] calldata jobIds) external onlyOwner {
         for (uint256 i = 0; i < jobIds.length; i++) {
             uint256 jobId = jobIds[i];
             JobStorage storage job = _job(jobId);
@@ -676,9 +593,7 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     }
 
     /// @inheritdoc IERC8183
-    function getJob(
-        uint256 jobId
-    ) external view returns (Job memory) {
+    function getJob(uint256 jobId) external view returns (Job memory) {
         JobStorage storage s = _job(jobId);
         return Job({
             client: s.client,
@@ -697,33 +612,30 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
         });
     }
 
-    function getFeeSnapshot(
-        uint256 jobId
-    ) external view returns (uint16 platformFeeBp_, uint16 evaluatorFeeBp_, address treasury_) {
+    function getFeeSnapshot(uint256 jobId)
+        external
+        view
+        returns (uint16 platformFeeBp_, uint16 evaluatorFeeBp_, address treasury_)
+    {
         JobStorage storage s = _job(jobId);
         return (s.fundedPlatformFeeBp, s.fundedEvaluatorFeeBp, s.fundedTreasury);
     }
 
-    function _job(
-        uint256 jobId
-    ) internal view returns (JobStorage storage job) {
+    function _job(uint256 jobId) internal view returns (JobStorage storage job) {
         if (jobId == 0 || jobId > jobCounter) revert JobDoesNotExist();
         job = _jobs[jobId];
     }
 
-    function _validatePayoutReceiver(
-        address payoutReceiver,
-        address paymentToken
-    ) internal view {
+    function _validatePayoutReceiver(address payoutReceiver, address paymentToken) internal view {
         if (payoutReceiver == address(this)) revert InvalidReceiver();
         if (payoutReceiver != address(0) && payoutReceiver == paymentToken) revert InvalidReceiver();
     }
 
-    function _claimHash(
-        uint256 cumulativeAmount,
-        bytes32 deliverable,
-        bytes32 optParamsHash
-    ) internal pure returns (bytes32) {
+    function _claimHash(uint256 cumulativeAmount, bytes32 deliverable, bytes32 optParamsHash)
+        internal
+        pure
+        returns (bytes32)
+    {
         return keccak256(abi.encode(cumulativeAmount, deliverable, optParamsHash));
     }
 
@@ -749,13 +661,9 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
         _payout(jobId, job, net, selector, optParams);
     }
 
-    function _payout(
-        uint256 jobId,
-        JobStorage storage job,
-        uint256 net,
-        bytes4 selector,
-        bytes calldata optParams
-    ) internal {
+    function _payout(uint256 jobId, JobStorage storage job, uint256 net, bytes4 selector, bytes calldata optParams)
+        internal
+    {
         address recipient = job.payoutReceiver == address(0) ? job.provider : job.payoutReceiver;
         if (net == 0) return;
         IERC20(job.paymentToken).safeTransfer(recipient, net);
@@ -766,29 +674,17 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
         }
     }
 
-    function _hookBefore(
-        address hook,
-        uint256 jobId,
-        bytes4 selector,
-        bytes memory data
-    ) internal {
+    function _hookBefore(address hook, uint256 jobId, bytes4 selector, bytes memory data) internal {
         if (hook == address(0)) return;
         IERC8183Hook(hook).beforeAction{gas: HOOK_GAS_LIMIT}(jobId, selector, data);
     }
 
-    function _hookAfter(
-        address hook,
-        uint256 jobId,
-        bytes4 selector,
-        bytes memory data
-    ) internal {
+    function _hookAfter(address hook, uint256 jobId, bytes4 selector, bytes memory data) internal {
         if (hook == address(0)) return;
         IERC8183Hook(hook).afterAction{gas: HOOK_GAS_LIMIT}(jobId, selector, data);
     }
 
-    function _toUint16(
-        uint256 value
-    ) internal pure returns (uint16) {
+    function _toUint16(uint256 value) internal pure returns (uint16) {
         // Fees are capped at MAX_FEE_BP (5000) before snapshot.
         // forge-lint: disable-next-line(unsafe-typecast)
         return uint16(value);

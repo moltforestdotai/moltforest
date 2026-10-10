@@ -32,6 +32,7 @@ export interface NetworkConfig {
    * ScoreGateHook attached to testnet ERC-8183 jobs.
    */
   scoreGateHook?: { address: `0x${string}`; deployBlock: number };
+  /**
    * The chain's name in Nansen's API (decision D47). Undefined where Nansen
    * has no data, which keeps the Nansen lookups off for that network.
    */

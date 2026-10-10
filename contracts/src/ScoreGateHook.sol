@@ -49,7 +49,16 @@ contract ScoreGateHook is BaseERC8183Hook {
     }
 
     /// @inheritdoc BaseERC8183Hook
-    function _preFund(uint256 jobId, address, /* caller */ bytes memory optParams) internal view override {
+    function _preFund(
+        uint256 jobId,
+        address,
+        /* caller */
+        bytes memory optParams
+    )
+        internal
+        view
+        override
+    {
         if (optParams.length == 0) revert BadOptParams();
 
         (

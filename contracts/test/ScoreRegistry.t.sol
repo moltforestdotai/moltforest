@@ -15,11 +15,7 @@ contract ScoreRegistryTest is Test {
     address internal verifierC;
 
     event EpochPublished(
-        uint64 indexed epochId,
-        bytes32 inputsRoot,
-        bytes32 scoresRoot,
-        bytes32 algoHash,
-        address[2] signers
+        uint64 indexed epochId, bytes32 inputsRoot, bytes32 scoresRoot, bytes32 algoHash, address[2] signers
     );
 
     function setUp() public {
@@ -31,7 +27,9 @@ contract ScoreRegistryTest is Test {
         registry = new ScoreRegistry(set);
         assertTrue(registry.verifiers(0) < registry.verifiers(1));
         assertTrue(registry.verifiers(1) < registry.verifiers(2));
-        assertTrue(_isOneOf(registry.verifiers(0)) && _isOneOf(registry.verifiers(1)) && _isOneOf(registry.verifiers(2)));
+        assertTrue(
+            _isOneOf(registry.verifiers(0)) && _isOneOf(registry.verifiers(1)) && _isOneOf(registry.verifiers(2))
+        );
     }
 
     function _isOneOf(address a) internal view returns (bool) {
