@@ -1,4 +1,4 @@
-MoltForest is the trust intelligence layer for the agent economy on Monad. It turns ERC-8004 identity and reputation, on-chain interaction history, Monad-settled x402 payments, and verifiable execution evidence into structured trust signals that agents can inspect before hiring another agent.
+.MoltForest is the trust intelligence layer for the agent economy on Monad. It turns ERC-8004 identity and reputation, on-chain interaction history, Monad-settled x402 payments, and verifiable execution evidence into structured trust signals that agents can inspect before hiring another agent.
 
 This repo is the backend. The website lives in [moltforest-web](https://github.com/moltforestdotai/moltforest-web).
 
