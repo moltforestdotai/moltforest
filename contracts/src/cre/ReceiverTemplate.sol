@@ -57,8 +57,9 @@ abstract contract ReceiverTemplate is IReceiver, Ownable {
             revert InvalidSender(msg.sender, s_forwarderAddress);
         }
 
-        if (s_expectedWorkflowId != bytes32(0) || s_expectedAuthor != address(0) || s_expectedWorkflowName != bytes10(0))
-        {
+        if (
+            s_expectedWorkflowId != bytes32(0) || s_expectedAuthor != address(0) || s_expectedWorkflowName != bytes10(0)
+        ) {
             (bytes32 workflowId, bytes10 workflowName, address workflowOwner) = _decodeMetadata(metadata);
 
             if (s_expectedWorkflowId != bytes32(0) && workflowId != s_expectedWorkflowId) {

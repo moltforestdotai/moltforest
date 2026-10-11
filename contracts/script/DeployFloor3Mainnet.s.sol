@@ -28,7 +28,8 @@ contract DeployFloor3Mainnet is Script {
     function run() external {
         require(block.chainid == MONAD_MAINNET, "not Monad mainnet");
 
-        address[3] memory verifiers = [vm.envAddress("VERIFIER_1"), vm.envAddress("VERIFIER_2"), vm.envAddress("VERIFIER_3")];
+        address[3] memory verifiers =
+            [vm.envAddress("VERIFIER_1"), vm.envAddress("VERIFIER_2"), vm.envAddress("VERIFIER_3")];
         address forwarder = vm.envOr("CRE_FORWARDER", CRE_PROD_FORWARDER);
         uint16 minScoreBps = uint16(vm.envOr("MIN_SCORE_BPS", uint256(5_000)));
         uint16 minConfidenceBps = uint16(vm.envOr("MIN_CONFIDENCE_BPS", uint256(2_000)));
