@@ -1,0 +1,13 @@
+{
+  "schedule": "0 0 * * * *",
+  "pendingEpochUrl": "http://127.0.0.1:4000/v1/scores/pending-epoch?network=testnet",
+  "pendingEpochApiKey": "",
+  "evms": [
+    {
+      "creScorePublisherAddress": "0xEDAffF4855de733de33aF792b7DD4ddf1670A3c5",
+      "scoreRegistryAddress": "0x7d86EdFEdbE012F7fcE72A95F51fEbEa2f215785",
+      "chainName": "monad-testnet",
+      "gasLimit": "800000"
+    }
+  ]
+}

@@ -416,3 +416,59 @@ export const feedbackFile = app.table(
     index("feedback_file_due_idx").on(t.nextFetchAt).where(sql`status IN ('pending', 'unreachable')`),
   ],
 );
+
+/**
+ * Published Floor-3 score epoch (Merkle roots on ScoreRegistry). Rows are written
+ * when an epoch is published so the API can rebuild proofs without trusting callers.
+ */
+export const scoreEpoch = app.table(
+  "score_epoch",
+  {
+    chainId: integer("chain_id").notNull(),
+    epochId: bigint("epoch_id", { mode: "number" }).notNull(),
+    inputsRoot: text("inputs_root").notNull(),
+    scoresRoot: text("scores_root").notNull(),
+    algoHash: text("algo_hash").notNull(),
+    scoreRegistry: text("score_registry").notNull(),
+    publishTx: text("publish_tx"),
+    publishedAt: timestamp("published_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.chainId, t.epochId] })],
+);
+
+/** One agent leaf inside a published epoch (enough to rebuild the Merkle tree). */
+export const scoreEpochAgent = app.table(
+  "score_epoch_agent",
+  {
+    chainId: integer("chain_id").notNull(),
+    epochId: bigint("epoch_id", { mode: "number" }).notNull(),
+    agentId: numeric("agent_id", { precision: 78, scale: 0, mode: "string" }).notNull(),
+    scoreBps: integer("score_bps").notNull(),
+    confidenceBps: integer("confidence_bps").notNull(),
+    paidReviews: integer("paid_reviews").notNull(),
+    independentClusters: integer("independent_clusters").notNull(),
+    totalPaidVolume: numeric("total_paid_volume", { precision: 78, scale: 0, mode: "string" }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.chainId, t.epochId, t.agentId] }),
+    index("score_epoch_agent_agent_idx").on(t.chainId, t.agentId, t.epochId),
+  ],
+);
+
+/**
+ * Latest prepared epoch awaiting CRE (or any courier) to call ScoreRegistry.publishEpoch.
+ * One row per chain — overwritten by `prepare-epoch`.
+ */
+export const scoreEpochPending = app.table("score_epoch_pending", {
+  chainId: integer("chain_id").primaryKey(),
+  epochId: bigint("epoch_id", { mode: "number" }).notNull(),
+  inputsRoot: text("inputs_root").notNull(),
+  scoresRoot: text("scores_root").notNull(),
+  algoHash: text("algo_hash").notNull(),
+  signature0: text("signature_0").notNull(),
+  signature1: text("signature_1").notNull(),
+  signer0: text("signer_0").notNull(),
+  signer1: text("signer_1").notNull(),
+  scoreRegistry: text("score_registry").notNull(),
+  preparedAt: timestamp("prepared_at", { withTimezone: true }).notNull().defaultNow(),
+});

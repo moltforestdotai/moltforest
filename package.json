@@ -29,6 +29,8 @@
     "dev:api": "pnpm --filter @moltforest/api dev",
     "dev:workers": "pnpm --filter @moltforest/workers dev",
     "scores:publish-epoch": "pnpm --filter @moltforest/scores publish-epoch",
+    "scores:prepare-epoch": "pnpm --filter @moltforest/scores prepare-epoch",
+    "scores:demo-gate": "pnpm --filter @moltforest/scores demo-score-gate",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test"
   }

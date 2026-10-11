@@ -1,0 +1,13 @@
+{
+  "schedule": "0 0 * * * *",
+  "pendingEpochUrl": "https://api.moltforest.com/v1/scores/pending-epoch?network=mainnet",
+  "pendingEpochApiKey": "",
+  "evms": [
+    {
+      "creScorePublisherAddress": "0x0000000000000000000000000000000000000000",
+      "scoreRegistryAddress": "0x0000000000000000000000000000000000000000",
+      "chainName": "monad-mainnet",
+      "gasLimit": "800000"
+    }
+  ]
+}

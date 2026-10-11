@@ -27,3 +27,12 @@ export {
   verifyScoreOnChain,
   type BuiltEpoch,
 } from "./publish.js";
+export { persistPublishedEpoch, type PersistEpochOpts, type SqlQueryable } from "./persist.js";
+export {
+  loadScoresFromDb,
+  scoreInputsFromSummaryRows,
+  scoresFromSummaryRows,
+  type LoadScoresFromDbOpts,
+  type ReviewSummaryRow,
+} from "./fromDb.js";
+export { persistPendingEpoch, type PendingEpochPayload, type PersistPendingOpts } from "./pending.js";

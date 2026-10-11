@@ -1,0 +1,18 @@
+# CRE project config — Floor-3 epoch publisher (Monad)
+# Docs: https://docs.chain.link/cre/reference/project-configuration-ts
+
+local-simulation:
+  rpcs:
+    - chain-name: monad-testnet
+      url: https://testnet-rpc.monad.xyz
+
+staging-settings:
+  rpcs:
+    - chain-name: monad-testnet
+      url: https://testnet-rpc.monad.xyz
+
+# Mainnet cutover target (fill consumer addresses in config.mainnet.json after deploy).
+mainnet-settings:
+  rpcs:
+    - chain-name: monad-mainnet
+      url: https://rpc.monad.xyz
