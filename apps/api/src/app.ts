@@ -28,11 +28,17 @@ import { createStatsRepository } from "./repositories/stats.js";
 import { createReceiptRepository } from "./repositories/receipts.js";
 import { createNewsletterRepository } from "./repositories/newsletter.js";
 import { newsletterRouter } from "./routes/newsletter.js";
+import { scoresRouter } from "./routes/scores.js";
+import { createScoreRepository } from "./repositories/scores.js";
+import { pendingEpochRouter } from "./routes/pendingEpoch.js";
 import type { ReceiptNetworks } from "./services/receiptNetworks.js";
 import { errorHandler, notFound } from "./lib/errors.js";
 
 export interface AppDeps {
-  config: Pick<AppConfig, "INDEXER_DB_SCHEMA" | "APP_DB_SCHEMA" | "CORS_ORIGINS" | "RATE_LIMIT_PER_MINUTE">;
+  config: Pick<
+    AppConfig,
+    "INDEXER_DB_SCHEMA" | "APP_DB_SCHEMA" | "CORS_ORIGINS" | "RATE_LIMIT_PER_MINUTE" | "SCORES_PENDING_API_KEY"
+  >;
   db: Db;
   chain: ChainChecker;
   /** Live activity for SSE; omitted in tests that do not need streaming. */
@@ -75,6 +81,8 @@ export function createApp({ config, db, chain, activityHub, receipts, newsletter
   );
   const evidenceRepository = createEvidenceRepository(db, config.APP_DB_SCHEMA);
   app.use("/v1/agents", trustRouter(agentRepository, evidenceRepository));
+  app.use("/v1/agents", scoresRouter(createScoreRepository(db, config.APP_DB_SCHEMA)));
+  app.use("/v1", pendingEpochRouter(db, config.APP_DB_SCHEMA, config.SCORES_PENDING_API_KEY));
   app.use(
     "/v1/agents",
     fundingGraphRouter(createFundingGraphRepository(db, { indexer: config.INDEXER_DB_SCHEMA, app: config.APP_DB_SCHEMA })),

@@ -1,0 +1,17 @@
+{
+  "name": "@moltforest/cre-epoch-publisher",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "bunx cre-setup || true"
+  },
+  "dependencies": {
+    "@chainlink/cre-sdk": "^1.1.0",
+    "viem": "^2.56.9"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.21",
+    "typescript": "^5.9.2"
+  }
+}

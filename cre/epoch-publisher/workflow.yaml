@@ -1,0 +1,23 @@
+local-simulation:
+  user-workflow:
+    workflow-name: "moltforest-epoch-publisher-sim"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.simulation.json"
+    secrets-path: ""
+
+staging-settings:
+  user-workflow:
+    workflow-name: "moltforest-epoch-publisher-staging"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.staging.json"
+    secrets-path: ""
+
+mainnet-settings:
+  user-workflow:
+    workflow-name: "moltforest-epoch-publisher-mainnet"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.mainnet.json"
+    secrets-path: ""

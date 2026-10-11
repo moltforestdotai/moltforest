@@ -21,17 +21,21 @@ export interface NetworkConfig {
    */
   receiptRegistry?: { address: `0x${string}`; deployBlock: number };
   /**
-   * Floor 3 ScoreRegistry (epoch Merkle roots). Testnet only until filled after deploy.
+   * Floor 3 ScoreRegistry (epoch Merkle roots). Filled after deploy per network.
    */
   scoreRegistry?: { address: `0x${string}`; deployBlock: number };
   /**
-   * Our ERC-8183 Agentic Commerce deploy on testnet (QNTX mainnet instance is not used).
+   * Our ERC-8183 Agentic Commerce deploy (QNTX mainnet instance is not used).
    */
   agenticCommerce?: { address: `0x${string}`; deployBlock: number };
   /**
-   * ScoreGateHook attached to testnet ERC-8183 jobs.
+   * ScoreGateHook attached to ERC-8183 jobs.
    */
   scoreGateHook?: { address: `0x${string}`; deployBlock: number };
+  /**
+   * CRE consumer that calls ScoreRegistry.publishEpoch.
+   */
+  creScorePublisher?: { address: `0x${string}`; deployBlock: number };
 }
 
 export const NETWORKS: Record<NetworkName, NetworkConfig> = {
@@ -44,6 +48,8 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     identityRegistry: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
     reputationRegistry: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
     usdc: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
+    // Floor-3: fill after `forge script script/DeployFloor3Mainnet.s.sol` (see FLOOR3.md).
+    // scoreRegistry / agenticCommerce / scoreGateHook / creScorePublisher
   },
   testnet: {
     name: "testnet",
@@ -62,6 +68,8 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     agenticCommerce: { address: "0xa3062BA91612782020EA0310De0e068D9bcEFF6a", deployBlock: 69568083 },
     // Deployed 2026-10-09, tx 0xf447861f60965b82562e99c4c8a348de31c34b4ec116a12e315ca97e1c025e16.
     scoreGateHook: { address: "0xbd5f1114092A92EF24Aa3ebE00e3c462f572eBFB", deployBlock: 69568091 },
+    // Deployed 2026-10-10 (simulation MockKeystoneForwarder), tx 0x29472c41e3884805ba77a05ff469c068e1e65d6e69755fb7e82963c8999a7c38.
+    creScorePublisher: { address: "0xEDAffF4855de733de33aF792b7DD4ddf1670A3c5", deployBlock: 69_722_712 },
   },
 };
 

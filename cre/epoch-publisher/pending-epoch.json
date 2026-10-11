@@ -1,0 +1,19 @@
+{
+  "network": "testnet",
+  "chainId": 10143,
+  "epochId": "2",
+  "inputsRoot": "0x3adf76a507d5f88ba2a1fabe9dca510e9f8b53ab8769767630aff8ea7f090910",
+  "scoresRoot": "0x78cd7d292127568819d67fcf2d7736df618a2cd65590f55c6cab80a257c7d6b8",
+  "algoHash": "0x15514fa4836c653976d246bb270872ae0130ca5f7cd56178df50e1c1c16851a7",
+  "signatures": [
+    "0xfa5dfb7a3680c47a2f7305e41d02e807ad62aadaabc6594951fc40852270d59e06ebb70b311238660d50507b7afb4871f0b0b282692fa9e1aa00d3151579266e1b",
+    "0xa0e273202ca1de0f1e5b6d4271e1c5f8f62541cef3bffef744b72a8eb39fe862356589e19e26376354d18b04aa30c68b1d44cbf64d0387e158a72569f55d65dc1b"
+  ],
+  "signers": [
+    "0x50A43f508CF919eDd51562ec802782c91bD96552",
+    "0xA538Fcf864D690398dbb0Ce5A6337F6e89DB53e0"
+  ],
+  "scoreRegistry": "0x7d86EdFEdbE012F7fcE72A95F51fEbEa2f215785",
+  "preparedAt": "2026-10-10T07:48:42.222Z",
+  "note": "Cosigned epoch ready for CreScorePublisher / ScoreRegistry.publishEpoch. Not a hiring verdict (C1)."
+}

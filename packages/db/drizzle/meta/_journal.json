@@ -64,6 +64,20 @@
       "when": 1791446948217,
       "tag": "0008_nappy_wildside",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791616430276,
+      "tag": "0009_heavy_switch",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791618433243,
+      "tag": "0010_productive_vector",
+      "breakpoints": true
     }
   ]
 }

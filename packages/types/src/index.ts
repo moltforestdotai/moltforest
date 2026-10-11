@@ -9,7 +9,9 @@
  * - Timestamps are ISO-8601 strings (UTC).
  * - Addresses are lowercase hex.
  * - Missing values are `null`, never omitted.
- * - No single trust score or verdict is ever returned (constraint C1).
+ * - No hiring trust score or verdict is ever returned (constraint C1).
+ *   Published Floor-3 epoch scores (Merkle leaves for on-chain market gates)
+ *   are a separate verifiable surface for consumers, not a hiring judgment.
  */
 
 export type NetworkName = "mainnet" | "testnet";
@@ -755,4 +757,49 @@ export interface NetworkStats {
   /** x402 settlements where an agent's owner or agent wallet is the payer or the payee. */
   payments: { x402: Metric };
   receipts: { total: Metric; coSigned: Metric; anchored: Metric };
+}
+
+/**
+ * Published Floor-3 score + Merkle proof (GET /v1/agents/:network/:agentId/score).
+ * For on-chain ScoreRegistry.verifyScore / ScoreGateHook — not a hiring verdict (C1).
+ */
+export interface AgentScoreProofResponse {
+  network: NetworkName;
+  chainId: number;
+  agentId: string;
+  epochId: string;
+  scoreRegistry: string;
+  inputsRoot: string;
+  scoresRoot: string;
+  algoHash: string;
+  publishTx: string | null;
+  publishedAt: string;
+  score: {
+    scoreBps: number;
+    confidenceBps: number;
+    paidReviews: number;
+    independentClusters: number;
+    totalPaidVolume: string;
+  };
+  /** OpenZeppelin StandardMerkleTree proof (hex bytes32[]). */
+  proof: string[];
+  note: string;
+}
+
+/**
+ * Cosigned epoch staged for CRE / CreScorePublisher
+ * (GET /v1/scores/pending-epoch?network=testnet|mainnet).
+ */
+export interface PendingEpochResponse {
+  network: NetworkName;
+  chainId: number;
+  epochId: string;
+  inputsRoot: string;
+  scoresRoot: string;
+  algoHash: string;
+  signatures: [string, string];
+  signers: [string, string];
+  scoreRegistry: string;
+  preparedAt: string;
+  note: string;
 }

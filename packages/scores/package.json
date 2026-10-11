@@ -11,15 +11,19 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "publish-epoch": "tsx src/cli/publish-epoch.ts"
+    "publish-epoch": "tsx src/cli/publish-epoch.ts",
+    "prepare-epoch": "tsx src/cli/prepare-epoch.ts",
+    "demo-score-gate": "tsx src/cli/demo-score-gate.ts"
   },
   "dependencies": {
     "@moltforest/chain": "workspace:*",
     "@openzeppelin/merkle-tree": "^1.0.8",
+    "pg": "^8.16.3",
     "viem": "^2.56.9"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
+    "@types/pg": "^8.15.5",
     "tsx": "^4.20.5",
     "typescript": "^6.0.3",
     "vitest": "^4.1.0"

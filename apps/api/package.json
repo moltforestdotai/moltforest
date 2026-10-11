@@ -16,6 +16,7 @@
     "@moltforest/chain": "workspace:*",
     "@moltforest/db": "workspace:*",
     "@moltforest/receipts": "workspace:*",
+    "@moltforest/scores": "workspace:*",
     "@moltforest/types": "workspace:*",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
