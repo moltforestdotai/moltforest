@@ -124,83 +124,40 @@ interface IERC8183 {
     ) external returns (uint256 jobId);
 
     /// @notice Provider sets the payout receiver while the job is Open.
-    function setPayoutReceiver(
-        uint256 jobId,
-        address payoutReceiver
-    ) external;
+    function setPayoutReceiver(uint256 jobId, address payoutReceiver) external;
 
     /// @notice Client assigns a provider to an Open job that has none.
-    function setProvider(
-        uint256 jobId,
-        address provider,
-        uint256 agentId
-    ) external;
+    function setProvider(uint256 jobId, address provider, uint256 agentId) external;
 
     /// @notice Provider sets payment token and budget while the job is Open.
-    function setBudget(
-        uint256 jobId,
-        address token,
-        uint256 amount,
-        bytes calldata optParams
-    ) external;
+    function setBudget(uint256 jobId, address token, uint256 amount, bytes calldata optParams) external;
 
     /// @notice Client funds escrow. `expectedToken` / `expectedBudget` must match stored values.
-    function fund(
-        uint256 jobId,
-        address expectedToken,
-        uint256 expectedBudget,
-        bytes calldata optParams
-    ) external;
+    function fund(uint256 jobId, address expectedToken, uint256 expectedBudget, bytes calldata optParams) external;
 
     /// @notice Provider submits work. Allowed from Funded, or Open with zero budget.
-    function submit(
-        uint256 jobId,
-        bytes32 deliverable,
-        bytes calldata optParams
-    ) external;
+    function submit(uint256 jobId, bytes32 deliverable, bytes calldata optParams) external;
 
     /// @notice Evaluator completes a Submitted job and pays the remainder via the fee snapshot.
-    function complete(
-        uint256 jobId,
-        bytes32 reason,
-        bytes calldata optParams
-    ) external;
+    function complete(uint256 jobId, bytes32 reason, bytes calldata optParams) external;
 
     /// @notice Reject a job. Open: client or provider. Funded/Submitted: evaluator.
-    function reject(
-        uint256 jobId,
-        bytes32 reason,
-        bytes calldata optParams
-    ) external;
+    function reject(uint256 jobId, bytes32 reason, bytes calldata optParams) external;
 
     /// @notice Permissionless refund after expiry. Not hookable.
-    function claimRefund(
-        uint256 jobId
-    ) external;
+    function claimRefund(uint256 jobId) external;
 
     /// @notice Provider files a pending claim against a Funded job. No token movement.
-    function submitClaim(
-        uint256 jobId,
-        uint256 cumulativeAmount,
-        bytes32 deliverable,
-        bytes calldata optParams
-    ) external;
+    function submitClaim(uint256 jobId, uint256 cumulativeAmount, bytes32 deliverable, bytes calldata optParams)
+        external;
 
     /// @notice Client unilaterally settles a cumulative amount. Does not consume a pending claim.
-    function settleClaim(
-        uint256 jobId,
-        uint256 cumulativeAmount,
-        bytes32 deliverable,
-        bytes calldata optParams
-    ) external;
+    function settleClaim(uint256 jobId, uint256 cumulativeAmount, bytes32 deliverable, bytes calldata optParams)
+        external;
 
     /// @notice Client or evaluator approves the pending claim. No expiry check.
-    function approveClaim(
-        uint256 jobId,
-        uint256 cumulativeAmount,
-        bytes32 deliverable,
-        bytes calldata optParams
-    ) external;
+    function approveClaim(uint256 jobId, uint256 cumulativeAmount, bytes32 deliverable, bytes calldata optParams)
+        external;
 
     /// @notice Client, evaluator, or provider rejects or withdraws the pending claim. No expiry check.
     function rejectClaim(
@@ -212,7 +169,5 @@ interface IERC8183 {
     ) external;
 
     /// @notice Canonical job view. Reverts `JobDoesNotExist` for unknown ids.
-    function getJob(
-        uint256 jobId
-    ) external view returns (Job memory);
+    function getJob(uint256 jobId) external view returns (Job memory);
 }

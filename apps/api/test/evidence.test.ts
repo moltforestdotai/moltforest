@@ -142,7 +142,7 @@ describe("buildEvidenceProfile", () => {
       "MARKED_INACTIVE",
     ]);
     const notCounted = p.observations.find((o) => o.code === "REVIEWS_NOT_COUNTED")!;
-    expect(notCounted.message).toBe("7665 of 7665 reviews are not counted: 7665 from wallets funded by the agent's owner or agent wallet.");
+    expect(notCounted.message).toBe("7665 of 7665 reviews are not counted: 7665 from wallets funded by the agent's owner or agent wallet, or sharing a signing key with it.");
     expect(p.observations.map((o) => o.message).join(" ")).not.toMatch(/fake|fraud|scam/i);
   });
 });

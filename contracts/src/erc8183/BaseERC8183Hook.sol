@@ -37,11 +37,7 @@ abstract contract BaseERC8183Hook is ERC165, IERC8183Hook {
         return interfaceId == type(IERC8183Hook).interfaceId || super.supportsInterface(interfaceId);
     }
 
-    function beforeAction(uint256 jobId, bytes4 selector, bytes calldata data)
-        external
-        override
-        onlyERC8183(jobId)
-    {
+    function beforeAction(uint256 jobId, bytes4 selector, bytes calldata data) external override onlyERC8183(jobId) {
         if (selector == IERC8183.fund.selector) {
             (address caller, bytes memory optParams) = abi.decode(data, (address, bytes));
             _preFund(jobId, caller, optParams);

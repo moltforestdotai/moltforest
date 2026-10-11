@@ -1,9 +1,10 @@
 import { formatUnits } from "viem";
-import { NETWORKS, type NetworkName } from "@moltforest/chain";
+import { NETWORKS, nansenLinkKind, type NetworkName } from "@moltforest/chain";
 import type {
   FundingGraph,
   FundingGraphCluster,
   FundingGraphFundingEdge,
+  FundingGraphNansenEdge,
   FundingGraphNode,
   FundingGraphPaymentEdge,
   FundingGraphReviewEdge,
@@ -11,6 +12,7 @@ import type {
   WalletFundingStatus,
 } from "@moltforest/types";
 import { table, type Db } from "../db.js";
+import { isMissingRelation } from "./sync.js";
 
 /** Reviewer wallets drawn by default, and the most a caller may ask for. 8,000 covers the known mainnet farms (agent #182 had 7,665). */
 export const DEFAULT_GRAPH_LIMIT = 8_000;
@@ -37,6 +39,9 @@ interface ReviewerRow {
  * Reviewers are ordered by how many reviews they wrote and capped, because a
  * farmed agent can have thousands of them; the remainder is summarised rather
  * than dropped silently.
+ *
+ * On networks Nansen covers, Nansen's labels and the relations MoltForest
+ * uses are added (decision D47).
  */
 export function createFundingGraphRepository(db: Db, schemas: { indexer: string; app: string }) {
   const agents = table(schemas.indexer, "Agent");
@@ -44,6 +49,18 @@ export function createFundingGraphRepository(db: Db, schemas: { indexer: string;
   const assessment = table(schemas.app, "review_assessment");
   const summary = table(schemas.app, "agent_review_summary");
   const funding = table(schemas.app, "wallet_funding");
+  const nansenWallets = table(schemas.app, "nansen_wallet");
+  const nansenRelations = table(schemas.app, "nansen_relation");
+
+  /** Rows of a query on the Nansen tables, or none before they are migrated. */
+  const optional = async <T>(query: Promise<{ rows: T[] }>): Promise<T[]> => {
+    try {
+      return (await query).rows;
+    } catch (err) {
+      if (isMissingRelation(err)) return [];
+      throw err;
+    }
+  };
 
   return {
     async get(network: NetworkName, agentId: string, limit: number): Promise<FundingGraph | null> {
@@ -111,6 +128,7 @@ export function createFundingGraphRepository(db: Db, schemas: { indexer: string;
         countedReviews: 0,
         verifiedReviews: 0,
         notCountedReason: null,
+        nansenLabel: null,
       });
       if (agentWallet) {
         addNode({
@@ -122,6 +140,7 @@ export function createFundingGraphRepository(db: Db, schemas: { indexer: string;
           countedReviews: 0,
           verifiedReviews: 0,
           notCountedReason: null,
+          nansenLabel: null,
         });
       }
 
@@ -158,6 +177,7 @@ export function createFundingGraphRepository(db: Db, schemas: { indexer: string;
             countedReviews: r.counted,
             verifiedReviews: r.verified,
             notCountedReason: r.counted > 0 ? null : r.reason,
+            nansenLabel: null,
           });
         }
         reviewEdges.push({ from: r.client, reviews: r.reviews, countedReviews: r.counted });
@@ -184,8 +204,78 @@ export function createFundingGraphRepository(db: Db, schemas: { indexer: string;
             countedReviews: 0,
             verifiedReviews: 0,
             notCountedReason: null,
+            nansenLabel: null,
           });
         }
+      }
+
+      // What Nansen says about the drawn reviewers (decision D47).
+      const nansenEdges: FundingGraphNansenEdge[] = [];
+      let nansenCoverage: FundingGraph["nansen"] = null;
+      if (NETWORKS[network].nansenChain) {
+        const drawn = reviewers.rows.map((r) => r.client);
+        const [relations, coverage] = await Promise.all([
+          optional(
+            db.query<{ wallet: string; related: string; relation: string; tx_hash: string | null }>(
+              `SELECT wallet, related, relation, tx_hash FROM ${nansenRelations}
+                WHERE chain_id = $1 AND wallet = ANY($2::text[]) ORDER BY wallet, relation, related`,
+              [chainId, drawn],
+            ),
+          ),
+          optional(
+            db.query<{ looked_up: number; last: Date | null }>(
+              `SELECT count(*)::int AS looked_up, max(fetched_at) AS last FROM ${nansenWallets}
+                WHERE chain_id = $1 AND status = 'ok' AND address = ANY($2::text[])`,
+              [chainId, drawn],
+            ),
+          ),
+        ]);
+        const fundingPairs = new Set(fundingEdges.map((e) => `${e.from}>${e.to}`));
+        for (const row of relations) {
+          const kind = nansenLinkKind(row.relation);
+          if (!kind || row.related === row.wallet) continue;
+          // A first funder our own scan found too is already drawn as a funding edge.
+          if (kind === "funding" && fundingPairs.has(`${row.related}>${row.wallet}`)) continue;
+          nansenEdges.push({ from: row.related, to: row.wallet, relation: row.relation, kind, txHash: row.tx_hash });
+        }
+
+        const missingRelated = [...new Set(nansenEdges.map((e) => e.from).filter((a) => !byAddress.has(a)))];
+        if (missingRelated.length > 0) {
+          const rows = await db.query<{ address: string; status: WalletFundingStatus; cluster_root: string | null }>(
+            `SELECT address, status, cluster_root FROM ${funding} WHERE chain_id = $1 AND address = ANY($2::text[])`,
+            [chainId, missingRelated],
+          );
+          const known = new Map(rows.rows.map((row) => [row.address, row]));
+          const funds = new Set(nansenEdges.filter((e) => e.kind === "funding").map((e) => e.from));
+          for (const address of missingRelated) {
+            const row = known.get(address);
+            addNode({
+              address,
+              role: funds.has(address) ? "funder" : "linked",
+              cluster: row?.cluster_root ?? null,
+              fundingStatus: row?.status ?? "pending",
+              reviews: 0,
+              countedReviews: 0,
+              verifiedReviews: 0,
+              notCountedReason: null,
+              nansenLabel: null,
+            });
+          }
+        }
+
+        const labels = await optional(
+          db.query<{ related: string; label: string }>(
+            `SELECT DISTINCT ON (related) related, label FROM ${nansenRelations}
+              WHERE chain_id = $1 AND related = ANY($2::text[]) AND label IS NOT NULL
+              ORDER BY related, fetched_at DESC, label`,
+            [chainId, nodes.map((n) => n.address)],
+          ),
+        );
+        for (const row of labels) {
+          const node = byAddress.get(row.related);
+          if (node) node.nansenLabel = row.label;
+        }
+        nansenCoverage = { lookedUp: coverage[0]?.looked_up ?? 0, wallets: drawn.length, lastFetchedAt: coverage[0]?.last?.toISOString() ?? null };
       }
 
       const paymentEdges: FundingGraphPaymentEdge[] = payments.rows
@@ -235,8 +325,9 @@ export function createFundingGraphRepository(db: Db, schemas: { indexer: string;
         agentWallet,
         assessedAt: assessed.rows[0]?.assessed_at.toISOString() ?? null,
         nodes,
-        edges: { funding: fundingEdges, review: reviewEdges, payment: paymentEdges },
+        edges: { funding: fundingEdges, review: reviewEdges, payment: paymentEdges, nansen: nansenEdges },
         clusters: [...clusters.values()].sort((a, b) => b.wallets - a.wallets || a.root.localeCompare(b.root)),
+        nansen: nansenCoverage,
         limit,
         omitted: omittedWallets > 0 ? { wallets: omittedWallets, reviews: totalReviews - drawnReviews } : null,
       };

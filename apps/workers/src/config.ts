@@ -79,6 +79,19 @@ const EnvSchema = z.object({
   REVIEWS_HUB_MIN_AGENTS: z.coerce.number().int().min(2).default(10),
   /** A wallet's later review of the same agent counts again after this many days. */
   REVIEWS_REPEAT_WINDOW_DAYS: z.coerce.number().int().min(1).default(30),
+  // --- Nansen related wallets of Monad mainnet reviewers (decision D47) ---
+  /** Without it the Nansen lookups are off. */
+  NANSEN_API_KEY: z.string().trim().min(1).optional(),
+  NANSEN_ENABLED: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
+  NANSEN_BASE_URL: z.string().url().default("https://api.nansen.ai"),
+  /** Answered lookups per UTC day; each costs 1 credit. */
+  NANSEN_DAILY_LOOKUPS: z.coerce.number().int().min(0).default(25),
+  NANSEN_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(25),
+  NANSEN_POLL_SECONDS: z.coerce.number().int().min(60).default(600),
+  NANSEN_REQUEST_DELAY_MS: z.coerce.number().int().min(0).max(10_000).default(300),
+  NANSEN_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(15_000),
+  /** Mainnet agent ids whose reviewers are looked up first, e.g. "182,9" for the agents a demo shows. */
+  NANSEN_FOCUS_AGENTS: csv("").pipe(z.array(z.string().regex(/^\d+$/, "must be agent ids, e.g. 182,9"))),
   // --- Receipts anchored on the ReceiptRegistry by anyone (HyperSync) ---
   RECEIPT_EVENTS_ENABLED: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
   RECEIPT_EVENTS_POLL_SECONDS: z.coerce.number().int().min(10).default(60),

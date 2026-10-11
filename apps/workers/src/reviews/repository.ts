@@ -1,8 +1,22 @@
 import type pg from "pg";
 import { table } from "../enrich/repository.js";
-import { reviewKey, type AgentAddresses, type AgentSummary, type FileFacts, type Funding, type LinkContext, type PaymentFact, type ReceiptFact, type ReviewLabel, type ReviewRow } from "./assess.js";
+import {
+  NO_NANSEN_FACTS,
+  reviewKey,
+  type AgentAddresses,
+  type AgentSummary,
+  type FileFacts,
+  type Funding,
+  type LinkContext,
+  type NansenFacts,
+  type PaymentFact,
+  type ReceiptFact,
+  type ReviewLabel,
+  type ReviewRow,
+} from "./assess.js";
 import type { FileResult } from "./feedbackFiles.js";
 import type { FundingResult } from "./funding.js";
+import { nansenFactsFromRows } from "../nansen/facts.js";
 
 export interface DueFile {
   agentId: string;
@@ -26,6 +40,7 @@ export function createReviewRepository(db: pg.Pool, schemas: { indexer: string; 
   const files = table(schemas.app, "feedback_file");
   const receipts = table(schemas.app, "receipt");
   const payments = table(schemas.app, "x402_payment");
+  const nansen = table(schemas.app, "nansen_relation");
 
   return {
     /** Adds every reviewer wallet on the chain as pending; returns how many are new. */
@@ -119,6 +134,21 @@ export function createReviewRepository(db: pg.Pool, schemas: { indexer: string; 
         [chainId],
       );
       return new Map(r.rows.map((row) => [row.address, { status: row.status, funder: row.funder, fundingTx: row.funding_tx, sweepTx: row.sweep_tx }]));
+    },
+
+    /** Nansen's links and exchange, bridge and faucet labels on this chain (decision D47); empty where Nansen has no data. */
+    async nansenFacts(chainId: number): Promise<NansenFacts> {
+      try {
+        const r = await db.query<{ wallet: string; related: string; relation: string; label: string | null; tx_hash: string | null }>(
+          `SELECT wallet, related, relation, label, tx_hash FROM ${nansen} WHERE chain_id = $1 ORDER BY wallet, related, relation`,
+          [chainId],
+        );
+        return nansenFactsFromRows(r.rows.map((row) => ({ wallet: row.wallet, related: row.related, relation: row.relation, label: row.label, txHash: row.tx_hash })));
+      } catch (err) {
+        // Not migrated yet: assess without Nansen rather than not at all.
+        if ((err as { code?: string }).code === "42P01") return NO_NANSEN_FACTS;
+        throw err;
+      }
     },
 
     async assessmentHashes(chainId: number): Promise<Map<string, string>> {

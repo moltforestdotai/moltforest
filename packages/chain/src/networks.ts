@@ -36,6 +36,10 @@ export interface NetworkConfig {
    * CRE consumer that calls ScoreRegistry.publishEpoch.
    */
   creScorePublisher?: { address: `0x${string}`; deployBlock: number };
+   * The chain's name in Nansen's API (decision D47). Undefined where Nansen
+   * has no data, which keeps the Nansen lookups off for that network.
+   */
+  nansenChain?: string;
 }
 
 export const NETWORKS: Record<NetworkName, NetworkConfig> = {
@@ -50,6 +54,7 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     usdc: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
     // Floor-3: fill after `forge script script/DeployFloor3Mainnet.s.sol` (see FLOOR3.md).
     // scoreRegistry / agenticCommerce / scoreGateHook / creScorePublisher
+    nansenChain: "monad",
   },
   testnet: {
     name: "testnet",

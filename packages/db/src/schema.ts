@@ -338,6 +338,53 @@ export const newsletterSubscriber = app.table(
   (t) => [index("newsletter_subscriber_created_idx").on(t.createdAt)],
 );
 
+/** Outcome of a Nansen lookup (decision D47): ok, or error (retried with backoff when transient). */
+export type NansenLookupStatus = "ok" | "error";
+
+/**
+ * Reviewer wallets looked up with Nansen's related-wallets endpoint (decision
+ * D47). Nansen covers Monad mainnet only. Doubles as the lookup queue: a
+ * candidate wallet without a row is due; an error row returns at next_fetch_at.
+ */
+export const nansenWallet = app.table(
+  "nansen_wallet",
+  {
+    chainId: integer("chain_id").notNull(),
+    address: text("address").notNull(),
+    status: text("status").$type<NansenLookupStatus>().notNull(),
+    /** Related wallets Nansen returned (rows in nansen_relation). */
+    relationCount: integer("relation_count").notNull().default(0),
+    attempts: integer("attempts").notNull().default(0),
+    error: text("error"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+    nextFetchAt: timestamp("next_fetch_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.chainId, t.address] }), index("nansen_wallet_fetched_idx").on(t.chainId, t.fetchedAt)],
+);
+
+/**
+ * What Nansen says about a looked-up wallet (decision D47), one related
+ * address per row: who first funded it, which key signs for it, which
+ * multisig it signs for… with the transaction behind the relation and
+ * Nansen's label for the related address (e.g. an exchange's name).
+ */
+export const nansenRelation = app.table(
+  "nansen_relation",
+  {
+    chainId: integer("chain_id").notNull(),
+    /** The wallet that was looked up. */
+    wallet: text("wallet").notNull(),
+    related: text("related").notNull(),
+    /** Nansen's words: "First Funder", "Signer", "Multisig Signer of", "Deployed by"… */
+    relation: text("relation").notNull(),
+    label: text("label"),
+    txHash: text("tx_hash"),
+    blockTime: timestamp("block_time", { withTimezone: true }),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.chainId, t.wallet, t.related, t.relation] }), index("nansen_relation_related_idx").on(t.chainId, t.related)],
+);
+
 /**
  * ERC-8004 feedback files (the review's feedbackURI), fetched once and checked
  * against feedbackHash. Only the facts MoltForest uses are kept: the

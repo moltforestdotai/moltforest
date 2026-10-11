@@ -66,9 +66,12 @@ export interface AgentService {
  * Why a review is not counted (decision D31). Neutral observations with
  * evidence, never accusations (constraint C5): reviews are not hidden.
  * - SELF_REVIEW: the reviewer is the agent's owner or agent wallet.
- * - FUNDED_BY_TARGET: the reviewer wallet was funded by the agent's owner or agent wallet (directly or through a linked wallet).
+ * - FUNDED_BY_TARGET: the reviewer wallet was funded by the agent's owner or agent wallet (directly or through a linked wallet),
+ *   or, on mainnet, Nansen ties it to them (for example a shared signing key; decision D47).
  * - REPEAT_REVIEWER: the same wallet already has a counted review of this agent within the repeat window.
- * - COORDINATED_CLUSTER: the reviewer shares a funder with a wallet whose review already counts; a cluster counts as one reviewer.
+ * - COORDINATED_CLUSTER: the reviewer shares a funder (or a Nansen-reported signing key) with a wallet whose review already counts;
+ *   a cluster counts as one reviewer.
+ * The evidence of a Nansen-made link lists it as `nansen: [{ address, relation, tx }]`.
  */
 export type ReviewExclusionReason = "SELF_REVIEW" | "FUNDED_BY_TARGET" | "REPEAT_REVIEWER" | "COORDINATED_CLUSTER";
 
@@ -405,9 +408,11 @@ export interface FundingGraphNode {
   address: string;
   /**
    * The agent's own addresses are drawn apart from the wallets that reviewed
-   * it. `funder` is a wallet that funded a reviewer without reviewing itself.
+   * it. `funder` is a wallet that funded a reviewer without reviewing itself;
+   * `linked` is an address Nansen ties to a reviewer some other way, such as
+   * the key that signs for it (decision D47).
    */
-  role: "owner" | "agentWallet" | "reviewer" | "funder";
+  role: "owner" | "agentWallet" | "reviewer" | "funder" | "linked";
   /** The funding group this wallet belongs to; null before the agent is assessed. */
   cluster: string | null;
   fundingStatus: WalletFundingStatus;
@@ -417,6 +422,24 @@ export interface FundingGraphNode {
   verifiedReviews: number;
   /** Why this wallet's reviews do not count; null when at least one counts. */
   notCountedReason: ReviewExclusionReason | null;
+  /** Nansen's label for this address, e.g. an exchange's name; null when Nansen gave none (decision D47). */
+  nansenLabel: string | null;
+}
+
+/**
+ * A relation Nansen reports between a reviewer wallet and another address
+ * (decision D47), with the transaction behind it. Only relations MoltForest
+ * uses are drawn: a first funder, the key that signs for a wallet, a multisig.
+ */
+export interface FundingGraphNansenEdge {
+  /** The related address. */
+  from: string;
+  /** The reviewer wallet Nansen was asked about. */
+  to: string;
+  /** Nansen's words, e.g. "First Funder" or "Signer". */
+  relation: string;
+  kind: "funding" | "control";
+  txHash: string | null;
 }
 
 /** A first MON transfer linking two wallets: the provenance behind a cluster. */
@@ -473,13 +496,19 @@ export interface FundingGraph {
   /** Null until the reviews worker has assessed this agent; the graph is then unlabelled. */
   assessedAt: string | null;
   nodes: FundingGraphNode[];
-  /** Three layers drawn separately: who funded whom, who reviewed, who paid. */
+  /** Layers drawn separately: who funded whom, who reviewed, who paid, and what Nansen links (decision D47). */
   edges: {
     funding: FundingGraphFundingEdge[];
     review: FundingGraphReviewEdge[];
     payment: FundingGraphPaymentEdge[];
+    nansen: FundingGraphNansenEdge[];
   };
   clusters: FundingGraphCluster[];
+  /**
+   * How many of the drawn reviewer wallets Nansen has been asked about, so a
+   * partly checked graph says so. Null on networks Nansen does not cover.
+   */
+  nansen: { lookedUp: number; wallets: number; lastFetchedAt: string | null } | null;
   /** Most-reviewing wallets kept; the rest are summarised in `omitted`. */
   limit: number;
   /** Reviewer wallets left out because of `limit`; null when all of them fit. */

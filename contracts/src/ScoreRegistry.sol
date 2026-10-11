@@ -38,9 +38,8 @@ contract ScoreRegistry is EIP712 {
         uint64 publishedAt; // unix seconds, filled on-chain at publish
     }
 
-    bytes32 public constant EPOCH_TYPEHASH = keccak256(
-        "Epoch(uint64 epochId,bytes32 inputsRoot,bytes32 scoresRoot,bytes32 algoHash)"
-    );
+    bytes32 public constant EPOCH_TYPEHASH =
+        keccak256("Epoch(uint64 epochId,bytes32 inputsRoot,bytes32 scoresRoot,bytes32 algoHash)");
 
     uint8 public constant VERIFIER_COUNT = 3;
     uint8 public constant THRESHOLD = 2;
@@ -54,11 +53,7 @@ contract ScoreRegistry is EIP712 {
     mapping(uint64 epochId => Epoch) public epochs;
 
     event EpochPublished(
-        uint64 indexed epochId,
-        bytes32 inputsRoot,
-        bytes32 scoresRoot,
-        bytes32 algoHash,
-        address[THRESHOLD] signers
+        uint64 indexed epochId, bytes32 inputsRoot, bytes32 scoresRoot, bytes32 algoHash, address[THRESHOLD] signers
     );
 
     error InvalidVerifierSet();
@@ -92,9 +87,7 @@ contract ScoreRegistry is EIP712 {
         view
         returns (bytes32)
     {
-        return _hashTypedDataV4(
-            keccak256(abi.encode(EPOCH_TYPEHASH, epochId, inputsRoot, scoresRoot, algoHash))
-        );
+        return _hashTypedDataV4(keccak256(abi.encode(EPOCH_TYPEHASH, epochId, inputsRoot, scoresRoot, algoHash)));
     }
 
     /// @notice Double-hashed leaf for one agent score (OZ StandardMerkleTree compatible).
@@ -132,10 +125,7 @@ contract ScoreRegistry is EIP712 {
         if (signers[0] >= signers[1]) revert UnorderedOrDuplicateSigners();
 
         epochs[epochId] = Epoch({
-            inputsRoot: inputsRoot,
-            scoresRoot: scoresRoot,
-            algoHash: algoHash,
-            publishedAt: uint64(block.timestamp)
+            inputsRoot: inputsRoot, scoresRoot: scoresRoot, algoHash: algoHash, publishedAt: uint64(block.timestamp)
         });
         if (epochId > latestEpochId) latestEpochId = epochId;
 
@@ -143,11 +133,7 @@ contract ScoreRegistry is EIP712 {
     }
 
     /// @notice Verify `score` is in `epochId`'s `scoresRoot` via Merkle proof.
-    function verifyScore(uint64 epochId, Score calldata score, bytes32[] calldata proof)
-        external
-        view
-        returns (bool)
-    {
+    function verifyScore(uint64 epochId, Score calldata score, bytes32[] calldata proof) external view returns (bool) {
         Epoch storage e = epochs[epochId];
         if (e.publishedAt == 0) revert EpochNotPublished(epochId);
         return MerkleProof.verify(proof, e.scoresRoot, hashScoreLeaf(score));
