@@ -108,4 +108,4 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
   return parsed.data;
 }
 
-export const USER_AGENT = "MoltForestBot/0.1 (+https://moltforest.ai; ERC-8004 registration indexer)";
+export const USER_AGENT = "MoltForestBot/0.1 (+https://www.moltforest.ai; ERC-8004 registration indexer)";
