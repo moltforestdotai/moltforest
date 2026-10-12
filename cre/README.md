@@ -41,15 +41,21 @@ SCORE_REGISTRY=0x7d86EdFEdbE012F7fcE72A95F51fEbEa2f215785 \
 ## Prepare an epoch (verifiers)
 
 ```bash
-# Demo leaves, epoch 2 (epoch 1 already published on-chain)
+# Demo leaves
 EPOCH_ID=2 pnpm scores:prepare-epoch -- --demo \
   --out cre/epoch-publisher/pending-epoch.json
 
+# Every ERC-8004 agent on testnet (zeros if no reviews) — preferred for hackathon POC:
+pnpm scores:prepare-epoch -- --from-db --all-agents
+
 # Mainnet after deploy:
-# EPOCH_ID=1 pnpm scores:prepare-epoch -- --demo --network mainnet
+# pnpm scores:prepare-epoch -- --demo --network mainnet
 ```
 
 Serves at `GET /v1/scores/pending-epoch?network=testnet` (or `mainnet`).
+
+**VPS:** set `EPOCH_PIPELINE_ENABLED=true` on workers (see `.env.example`) so prepare +
+`cre workflow simulate --broadcast` run unattended. Keep MockKeystoneForwarder until DON deploy.
 
 ## Simulate
 

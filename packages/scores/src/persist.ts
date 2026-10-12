@@ -66,6 +66,25 @@ export async function persistPublishedEpoch(opts: PersistEpochOpts): Promise<voi
   }
 }
 
+/** Attach the courier tx after CRE simulate / DON / break-glass publish. */
+export async function updateEpochPublishTx(opts: {
+  db: SqlQueryable;
+  schema?: string;
+  chainId: number;
+  epochId: bigint;
+  publishTx: Hex;
+  publishedAt?: Date;
+}): Promise<void> {
+  const schema = quoteIdent(opts.schema ?? "app");
+  const epochs = `${schema}."score_epoch"`;
+  await opts.db.query(
+    `UPDATE ${epochs}
+     SET publish_tx = $3, published_at = $4
+     WHERE chain_id = $1 AND epoch_id = $2`,
+    [opts.chainId, Number(opts.epochId), opts.publishTx, opts.publishedAt ?? new Date()],
+  );
+}
+
 async function insertAgentRow(
   db: SqlQueryable,
   agents: string,

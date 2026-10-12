@@ -14,13 +14,23 @@ export interface ReviewSummaryRow {
 export interface LoadScoresFromDbOpts {
   db: SqlQueryable;
   chainId: number;
-  /** Postgres schema (default `app`). */
+  /** App schema holding agent_review_summary (default `app`). */
   schema?: string;
   /**
+   * Indexer schema holding ERC-8004 `Agent` (default `envio`).
+   * Used when `allAgents` is true.
+   */
+  indexerSchema?: string;
+  /**
    * Only include agents with verified reviews or counted reviewers (default true).
-   * Zero-signal agents still assessed are omitted to keep the Merkle tree small.
+   * Ignored when `allAgents` is true (every registered agent is a leaf; zeros allowed).
    */
   requireSignal?: boolean;
+  /**
+   * Include every ERC-8004 Agent on this chain from the indexer (Identity Registry history),
+   * LEFT JOIN assessment summaries. Agents with no reviews score 0.
+   */
+  allAgents?: boolean;
   /** Hard cap on leaves (safety for huge indexes). */
   limit?: number;
 }
@@ -51,28 +61,36 @@ interface DbRow {
   total_paid_volume: string;
 }
 
+function mapRows(rows: DbRow[]): AgentScore[] {
+  return scoresFromSummaryRows(
+    rows.map((r) => ({
+      agentId: r.agent_id,
+      verifiedReviews: Number(r.verified_reviews),
+      countedReviewers: Number(r.counted_reviewers),
+      totalPaidVolume: r.total_paid_volume,
+    })),
+  );
+}
+
 /**
  * Load Floor-2 assessment facts from `agent_review_summary`, with paid volume
  * summed from counted `review_assessment.link.amount` (USDC base units).
+ *
+ * With `allAgents: true`, starts from indexer `Agent` (all ERC-8004 registrations
+ * since Identity Registry deploy / indexer start_block) so every agent is a Merkle leaf.
  */
 export async function loadScoresFromDb(opts: LoadScoresFromDbOpts): Promise<AgentScore[]> {
   const schema = quoteIdent(opts.schema ?? "app");
+  const indexer = quoteIdent(opts.indexerSchema ?? "envio");
   const summary = `${schema}."agent_review_summary"`;
   const assessment = `${schema}."review_assessment"`;
-  const requireSignal = opts.requireSignal !== false;
+  const agents = `${indexer}."Agent"`;
+  const allAgents = opts.allAgents === true;
+  const requireSignal = !allAgents && opts.requireSignal !== false;
   const limit = opts.limit && opts.limit > 0 ? Math.trunc(opts.limit) : undefined;
-
-  const signalClause = requireSignal
-    ? "AND (s.verified_reviews > 0 OR s.counted_reviewers > 0)"
-    : "";
   const limitClause = limit !== undefined ? `LIMIT ${limit}` : "";
 
-  const result = await opts.db.query(
-    `SELECT s.agent_id::text AS agent_id,
-            s.verified_reviews,
-            s.counted_reviewers,
-            COALESCE(v.total_paid_volume, 0)::text AS total_paid_volume
-     FROM ${summary} s
+  const volumeJoin = `
      LEFT JOIN (
        SELECT agent_id,
               SUM((link->>'amount')::numeric) AS total_paid_volume
@@ -82,29 +100,57 @@ export async function loadScoresFromDb(opts: LoadScoresFromDbOpts): Promise<Agen
          AND link IS NOT NULL
          AND link ? 'amount'
        GROUP BY agent_id
-     ) v ON v.agent_id = s.agent_id
+     ) v ON v.agent_id = s.agent_id`;
+
+  let sql: string;
+  if (allAgents) {
+    sql = `SELECT a.agent_id::text AS agent_id,
+            COALESCE(s.verified_reviews, 0)::int AS verified_reviews,
+            COALESCE(s.counted_reviewers, 0)::int AS counted_reviewers,
+            COALESCE(v.total_paid_volume, 0)::text AS total_paid_volume
+     FROM ${agents} a
+     LEFT JOIN ${summary} s
+       ON s.chain_id = a.chain_id AND s.agent_id = a.agent_id
+     LEFT JOIN (
+       SELECT agent_id,
+              SUM((link->>'amount')::numeric) AS total_paid_volume
+       FROM ${assessment}
+       WHERE chain_id = $1
+         AND counted = true
+         AND link IS NOT NULL
+         AND link ? 'amount'
+       GROUP BY agent_id
+     ) v ON v.agent_id = a.agent_id
+     WHERE a.chain_id = $1
+     ORDER BY a.agent_id::numeric ASC
+     ${limitClause}`;
+  } else {
+    const signalClause = requireSignal
+      ? "AND (s.verified_reviews > 0 OR s.counted_reviewers > 0)"
+      : "";
+    sql = `SELECT s.agent_id::text AS agent_id,
+            s.verified_reviews,
+            s.counted_reviewers,
+            COALESCE(v.total_paid_volume, 0)::text AS total_paid_volume
+     FROM ${summary} s
+     ${volumeJoin}
      WHERE s.chain_id = $1
        ${signalClause}
      ORDER BY s.agent_id::numeric ASC
-     ${limitClause}`,
-    [opts.chainId],
-  );
+     ${limitClause}`;
+  }
 
+  const result = await opts.db.query(sql, [opts.chainId]);
   const rows = (result as { rows: DbRow[] }).rows;
   if (!rows || rows.length === 0) {
     throw new Error(
-      `No agent_review_summary rows for chainId=${opts.chainId}` +
-        (requireSignal ? " with verified_reviews > 0 or counted_reviewers > 0" : "") +
-        ". Run the reviews worker, or use --demo / --scores.",
+      allAgents
+        ? `No Agent rows in ${opts.indexerSchema ?? "envio"} for chainId=${opts.chainId}. Is the indexer synced?`
+        : `No agent_review_summary rows for chainId=${opts.chainId}` +
+            (requireSignal ? " with verified_reviews > 0 or counted_reviewers > 0" : "") +
+            ". Run the reviews worker, or use --demo / --scores / --all-agents.",
     );
   }
 
-  return scoresFromSummaryRows(
-    rows.map((r) => ({
-      agentId: r.agent_id,
-      verifiedReviews: Number(r.verified_reviews),
-      countedReviewers: Number(r.counted_reviewers),
-      totalPaidVolume: r.total_paid_volume,
-    })),
-  );
+  return mapRows(rows);
 }

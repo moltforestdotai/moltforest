@@ -107,14 +107,22 @@ async function resolveScores(pool: pg.Pool | null, schema: string, chainId: numb
     const limitRaw = process.env.SCORE_LIMIT;
     const limit = limitRaw ? Number(limitRaw) : undefined;
     if (limitRaw && (!Number.isFinite(limit) || limit! < 1)) throw new Error("SCORE_LIMIT must be a positive integer");
+    const allAgents = hasFlag("--all-agents");
     const scores = await loadScoresFromDb({
       db: pool,
       chainId,
       schema,
+      indexerSchema: process.env.INDEXER_DB_SCHEMA ?? "envio",
       limit,
-      requireSignal: !hasFlag("--include-zero"),
+      allAgents,
+      requireSignal: allAgents ? false : !hasFlag("--include-zero"),
     });
-    return { scores, source: `db:${schema}.agent_review_summary (chain ${chainId}, ${scores.length} agents)` };
+    return {
+      scores,
+      source: allAgents
+        ? `db:all-agents (chain ${chainId}, ${scores.length} agents)`
+        : `db:${schema}.agent_review_summary (chain ${chainId}, ${scores.length} agents)`,
+    };
   }
   return { scores: demoScores(), source: "demo" };
 }

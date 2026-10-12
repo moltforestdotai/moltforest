@@ -58,8 +58,11 @@ CRE_SCORE_PUBLISHER=0xEDAffF4855de733de33aF792b7DD4ddf1670A3c5 \
 ```
 
 4. `cre workflow deploy epoch-publisher --target staging-settings` (once CRE deploy access is granted).
-5. Automate `prepare-epoch` after each assessment freeze (cron / worker); CRE cron only publishes what is staged.
-6. Keep `publish-epoch` as **break-glass** only (document who may run it).
+5. Automate prepare + CRE on the VPS via workers (`EPOCH_PIPELINE_ENABLED=true`):
+   cosigns all indexed agents (`EPOCH_PIPELINE_ALL_AGENTS`), stages pending, runs
+   `cre workflow simulate … --broadcast` (hackathon), falls back to `publishEpoch` if CRE fails.
+   Requires `VERIFIER_*_PRIVATE_KEY`, CRE CLI + auth, and `cre/.env` (`CRE_ETH_PRIVATE_KEY`) on the box.
+6. Keep manual `publish-epoch` as **break-glass** only (document who may run it).
 
 ## Mainnet cutover (Metropolis)
 

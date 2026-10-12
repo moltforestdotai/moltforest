@@ -57,4 +57,24 @@ describe("loadScoresFromDb", () => {
     };
     await expect(loadScoresFromDb({ db, chainId: 10143 })).rejects.toThrow(/No agent_review_summary/);
   });
+
+  it("loads every indexed Agent with zero scores when allAgents", async () => {
+    const db = {
+      async query(text: string, values?: unknown[]) {
+        expect(values).toEqual([10143]);
+        expect(text).toMatch(/"Agent"/);
+        expect(text).toMatch(/LEFT JOIN/);
+        return {
+          rows: [
+            { agent_id: "1", verified_reviews: 0, counted_reviewers: 0, total_paid_volume: "0" },
+            { agent_id: "7", verified_reviews: 3, counted_reviewers: 2, total_paid_volume: "30000" },
+          ],
+        };
+      },
+    };
+    const scores = await loadScoresFromDb({ db, chainId: 10143, allAgents: true });
+    expect(scores).toHaveLength(2);
+    expect(scores[0]).toEqual(computeScore({ agentId: "1", verifiedReviews: 0, countedReviewers: 0 }));
+    expect(scores[1]!.scoreBps).toBeGreaterThan(0);
+  });
 });

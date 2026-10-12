@@ -162,6 +162,9 @@ importers:
       '@moltforest/registration':
         specifier: workspace:*
         version: link:../../packages/registration
+      '@moltforest/scores':
+        specifier: workspace:*
+        version: link:../../packages/scores
       dotenv:
         specifier: ^17.2.3
         version: 17.4.2

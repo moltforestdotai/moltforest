@@ -7,7 +7,10 @@
  * - reviews:    looks up reviewer funding and decides which reviews count (app.agent_review_summary)
  * - receipt events: records receipts anchored on the ReceiptRegistry by anyone (app.receipt, source "chain")
  * - nansen:     asks Nansen how mainnet reviewer wallets are related (app.nansen_relation)
+ * - scores:     cosign + stage score epochs; CRE simulate --broadcast (or break-glass publish)
  */
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { pino, type Logger } from "pino";
 import { createPool } from "@moltforest/db";
 import { loadConfig, USER_AGENT } from "./config.js";
@@ -31,6 +34,7 @@ import { runReceiptEventsTick } from "./receiptEvents/runner.js";
 import { createNansenClient } from "./nansen/client.js";
 import { createNansenRepository } from "./nansen/repository.js";
 import { runNansenTick } from "./nansen/runner.js";
+import { optionalPublisherKey, parseVerifierKeys, runEpochPipelineTick } from "./scores/runner.js";
 
 const config = loadConfig();
 const logger = pino({ level: config.LOG_LEVEL });
@@ -205,6 +209,66 @@ const receiptEvents = () => {
   });
 };
 
+/** Floor-3 epoch pipeline: all-agent scores → 2-of-3 cosign → CRE simulate --broadcast. */
+const scores = () => {
+  const log = logger.child({ worker: "scores" });
+  if (!config.EPOCH_PIPELINE_ENABLED) return [];
+  const verifierKeys = parseVerifierKeys(process.env);
+  if (verifierKeys.length < 2) {
+    log.warn("epoch pipeline off: need at least two VERIFIER_*_PRIVATE_KEY values");
+    return [];
+  }
+  const publisherKey = optionalPublisherKey(process.env);
+  const creDir = resolve(
+    config.EPOCH_PIPELINE_CRE_DIR.startsWith("/")
+      ? config.EPOCH_PIPELINE_CRE_DIR
+      : fileURLToPath(new URL(`../../../${config.EPOCH_PIPELINE_CRE_DIR}`, import.meta.url)),
+  );
+  const rpcUrls = { mainnet: config.MONAD_RPC_URL_MAINNET, testnet: config.MONAD_RPC_URL_TESTNET };
+  return config.EPOCH_PIPELINE_NETWORKS.flatMap((name) => {
+    const net = NETWORKS[name];
+    if (!net.scoreRegistry) {
+      log.info({ network: name }, "epoch pipeline skip: ScoreRegistry not configured");
+      return [];
+    }
+    const netLog = log.child({ network: name });
+    netLog.info(
+      {
+        allAgents: config.EPOCH_PIPELINE_ALL_AGENTS,
+        creBroadcast: config.EPOCH_PIPELINE_CRE_BROADCAST,
+        fallback: config.EPOCH_PIPELINE_FALLBACK_PUBLISH,
+        creDir,
+      },
+      "epoch pipeline on",
+    );
+    return [
+      loop(`scores:${name}`, netLog, config.EPOCH_PIPELINE_INTERVAL_SECONDS * 1000, async () => {
+        const stats = await runEpochPipelineTick({
+          network: name,
+          net,
+          db,
+          appSchema: schemas.app,
+          indexerSchema: schemas.indexer,
+          verifierKeys,
+          allAgents: config.EPOCH_PIPELINE_ALL_AGENTS,
+          creBroadcast: config.EPOCH_PIPELINE_CRE_BROADCAST,
+          creDir,
+          creTarget: config.EPOCH_PIPELINE_CRE_TARGET,
+          fallbackPublish: config.EPOCH_PIPELINE_FALLBACK_PUBLISH,
+          publisherKey,
+          rpcUrl: rpcUrls[name] ?? net.defaultRpcUrl,
+          logger: netLog,
+        });
+        return {
+          selected: stats.prepared || stats.published ? 1 : 0,
+          full: false,
+          stats,
+        };
+      }),
+    ];
+  });
+};
+
 /** One Nansen loop per network Nansen covers (Monad mainnet; decision D47); off without an API key. */
 const nansen = () => {
   const log = logger.child({ worker: "nansen" });
@@ -254,5 +318,6 @@ await Promise.all([
   ...reviews(),
   ...receiptEvents(),
   ...nansen(),
+  ...scores(),
 ]);
 await db.end();

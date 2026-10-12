@@ -147,9 +147,28 @@ Production path (auth, idempotent skip, Forwarder cutover, mainnet): see `cre/PR
 6. ~~API endpoint to serve score + Merkle proof~~ — `GET /v1/agents/:network/:agentId/score`
 7. ~~Wire scores from live `agent_review_summary`~~ — `pnpm scores:publish-epoch -- --from-db`
 8. ~~Chainlink CRE as epoch publisher~~ — `CreScorePublisher` + hardened `cre/epoch-publisher`
-9. **Staging CRE simulate / `--broadcast`** (CRE CLI on machine)
-10. **Mainnet Floor-3 deploy** (`DeployFloor3Mainnet`) + fill `NETWORKS.mainnet` + CRE mainnet config
-11. CRE deploy access from Chainlink → live DON on testnet then mainnet
+9. ~~Staging CRE simulate / `--broadcast`~~ — proven locally; VPS via `EPOCH_PIPELINE_*` workers
+10. **Mainnet Floor-3 deploy** (`DeployFloor3Mainnet`) + fill `NETWORKS.mainnet` + CRE mainnet config *(defer for hackathon)*
+11. CRE deploy access from Chainlink → live DON on testnet then mainnet *(optional if simulate-on-VPS is accepted)*
+
+### VPS unattended (hackathon)
+
+```bash
+# On the server .env:
+EPOCH_PIPELINE_ENABLED=true
+EPOCH_PIPELINE_NETWORKS=testnet
+EPOCH_PIPELINE_ALL_AGENTS=true
+EPOCH_PIPELINE_CRE_BROADCAST=true
+EPOCH_PIPELINE_FALLBACK_PUBLISH=true
+# + VERIFIER_1/2/3_PRIVATE_KEY, CRE_API_KEY or cre login, cre/.env CRE_ETH_PRIVATE_KEY
+
+# Manual one-shot (all ERC-8004 agents since indexer start_block 0):
+pnpm scores:prepare-epoch -- --from-db --all-agents
+```
+
+Reviews: the reviews worker assesses every on-chain `Feedback` row. Agents with no ERC-8004
+reviews still appear in the Merkle tree with score 0 when `allAgents` is on — we do **not**
+fabricate Reputation Registry reviews.
 
 ## Leaf encoding (keep TS in sync)
 

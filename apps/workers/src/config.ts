@@ -95,6 +95,23 @@ const EnvSchema = z.object({
   // --- Receipts anchored on the ReceiptRegistry by anyone (HyperSync) ---
   RECEIPT_EVENTS_ENABLED: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
   RECEIPT_EVENTS_POLL_SECONDS: z.coerce.number().int().min(10).default(60),
+  // --- Floor-3 epoch pipeline (prepare-epoch + CRE simulate --broadcast on VPS) ---
+  /** Cosign all agents from DB and publish via CRE CLI simulate (hackathon / staging). */
+  EPOCH_PIPELINE_ENABLED: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
+  /** Comma-separated: testnet,mainnet. Hackathon default is testnet only. */
+  EPOCH_PIPELINE_NETWORKS: csv("testnet").pipe(
+    z.array(z.enum(["mainnet", "testnet"])).min(1),
+  ),
+  EPOCH_PIPELINE_INTERVAL_SECONDS: z.coerce.number().int().min(60).default(3600),
+  /** Score every indexed ERC-8004 agent (zeros when no reviews). */
+  EPOCH_PIPELINE_ALL_AGENTS: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
+  /** Run `cre workflow simulate … --broadcast` after staging (needs CRE CLI + auth on the box). */
+  EPOCH_PIPELINE_CRE_BROADCAST: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
+  /** Absolute or repo-relative path to moltforest/cre (project.yaml). */
+  EPOCH_PIPELINE_CRE_DIR: z.string().default("cre"),
+  EPOCH_PIPELINE_CRE_TARGET: z.string().default("local-simulation"),
+  /** If CRE fails, call ScoreRegistry.publishEpoch with the cosigned payload (break-glass). */
+  EPOCH_PIPELINE_FALLBACK_PUBLISH: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 

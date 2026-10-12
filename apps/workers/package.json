@@ -15,6 +15,7 @@
     "@moltforest/chain": "workspace:*",
     "@moltforest/db": "workspace:*",
     "@moltforest/registration": "workspace:*",
+    "@moltforest/scores": "workspace:*",
     "dotenv": "^17.2.3",
     "ipaddr.js": "^2.5.0",
     "pg": "^8.16.3",
