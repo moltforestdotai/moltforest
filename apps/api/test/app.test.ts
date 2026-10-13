@@ -445,11 +445,11 @@ describe("API (integration)", () => {
       await insertReview(rCounted, 2, true, null, { by: "payment_proof", paymentTx: payTx, amount: "1000000", receiptHash: null, endpoint: "https://g.example" });
       await insertReview(rUnknown, 3, true, null, null);
       await db!.query(
-        `INSERT INTO "${SCHEMA}".wallet_funding (chain_id, address, status, funder, funding_tx, sweep_tx, cluster_root)
-         VALUES (143, $1, 'found', $2, $3, $4, $1),
-                (143, $5, 'found', NULL, NULL, NULL, $5),
-                (143, $6, 'none', NULL, NULL, NULL, $6),
-                (143, $2, 'none', NULL, NULL, NULL, $1)`,
+        `INSERT INTO "${SCHEMA}".wallet_funding (chain_id, address, status, funder, funding_tx, funding_value, sweep_tx, cluster_root)
+         VALUES (143, $1, 'found', $2, $3, 100000000000000000, $4, $1),
+                (143, $5, 'found', NULL, NULL, NULL, NULL, $5),
+                (143, $6, 'none', NULL, NULL, NULL, NULL, $6),
+                (143, $2, 'none', NULL, NULL, NULL, NULL, $1)`,
         [rFunded, OWNER_A.toLowerCase(), fundingTx, sweepTx, rCounted, rUnknown],
       );
       await db!.query(
@@ -476,7 +476,7 @@ describe("API (integration)", () => {
             [rUnknown, "reviewer", null, 0, "none"],
           ]),
         );
-        expect(body.edges.funding).toEqual([{ from: OWNER_A.toLowerCase(), to: rFunded, txHash: fundingTx, sweepTxHash: sweepTx }]);
+        expect(body.edges.funding).toEqual([{ from: OWNER_A.toLowerCase(), to: rFunded, txHash: fundingTx, value: "100000000000000000", sweepTxHash: sweepTx }]);
         expect(body.edges.payment).toEqual([{ from: rCounted, txHash: payTx, amountUsdc: "1", receiptHash: null, endpoint: "https://g.example" }]);
         expect(body.clusters.some((c) => c.containsTarget && c.wallets >= 2)).toBe(true);
 
@@ -537,7 +537,7 @@ describe("API (integration)", () => {
           { from: signer, to: rA, relation: "Signer", kind: "control", txHash: tx("c3") },
           { from: signer, to: rB, relation: "Signer", kind: "control", txHash: tx("c4") },
         ]);
-        expect(body.edges.funding).toContainEqual({ from: exchange, to: rB, txHash: tx("e4"), sweepTxHash: null });
+        expect(body.edges.funding).toContainEqual({ from: exchange, to: rB, txHash: tx("e4"), value: null, sweepTxHash: null });
         const byAddress = new Map(body.nodes.map((n) => [n.address, n]));
         expect(byAddress.get(signer)).toMatchObject({ role: "linked", nansenLabel: null });
         expect(byAddress.get(exchange)).toMatchObject({ role: "funder", nansenLabel: "Binance 14" });

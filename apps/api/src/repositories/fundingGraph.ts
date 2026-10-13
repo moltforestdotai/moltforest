@@ -30,6 +30,7 @@ interface ReviewerRow {
   status: WalletFundingStatus | null;
   funder: string | null;
   funding_tx: string | null;
+  funding_value: string | null;
   sweep_tx: string | null;
   cluster_root: string | null;
 }
@@ -93,14 +94,14 @@ export function createFundingGraphRepository(db: Db, schemas: { indexer: string;
                   count(*) FILTER (WHERE ra.counted)::int AS counted,
                   count(*) FILTER (WHERE ra.counted AND ra.link->>'paymentTx' IS NOT NULL)::int AS verified,
                   (array_agg(ra.reason) FILTER (WHERE ra.reason IS NOT NULL))[1] AS reason,
-                  wf.status, wf.funder, wf.funding_tx, wf.sweep_tx, wf.cluster_root
+                  wf.status, wf.funder, wf.funding_tx, wf.funding_value::text AS funding_value, wf.sweep_tx, wf.cluster_root
              FROM ${feedback} f
              LEFT JOIN ${assessment} ra
                ON ra.chain_id = f.chain_id AND ra.agent_id = f.agent_id::numeric
               AND ra.client = lower(f.client) AND ra.feedback_index = f.feedback_index
              LEFT JOIN ${funding} wf ON wf.chain_id = f.chain_id AND wf.address = lower(f.client)
             WHERE f.chain_id = $1 AND f.agent_id = $2 AND NOT f.revoked
-            GROUP BY lower(f.client), wf.status, wf.funder, wf.funding_tx, wf.sweep_tx, wf.cluster_root
+            GROUP BY lower(f.client), wf.status, wf.funder, wf.funding_tx, wf.funding_value, wf.sweep_tx, wf.cluster_root
             ORDER BY counted DESC, reviews DESC, client
             LIMIT $3`,
           [chainId, agentId, limit],
@@ -190,7 +191,7 @@ export function createFundingGraphRepository(db: Db, schemas: { indexer: string;
           });
         }
         reviewEdges.push({ from: r.client, reviews: r.reviews, countedReviews: r.counted });
-        if (r.funder) fundingEdges.push({ from: r.funder, to: r.client, txHash: r.funding_tx, sweepTxHash: r.sweep_tx });
+        if (r.funder) fundingEdges.push({ from: r.funder, to: r.client, txHash: r.funding_tx, value: r.funding_value, sweepTxHash: r.sweep_tx });
       }
 
       // A funder that did not review this agent still needs a node, or its
