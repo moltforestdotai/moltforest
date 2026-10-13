@@ -89,6 +89,8 @@ contract DeployFloor3Mainnet is Script {
         console.log("CRE Forwarder:", forwarder);
         console.log("USDC:", USDC_MAINNET);
         console.log("Chain id:", block.chainid);
-        console.log("Next: pnpm record:floor3-mainnet with SCORE_REGISTRY / ERC8183 / SCORE_GATE_HOOK / CRE_SCORE_PUBLISHER / DEPLOY_BLOCK");
+        console.log(
+            "Next: pnpm record:floor3-mainnet with SCORE_REGISTRY / ERC8183 / SCORE_GATE_HOOK / CRE_SCORE_PUBLISHER / DEPLOY_BLOCK"
+        );
     }
 }
