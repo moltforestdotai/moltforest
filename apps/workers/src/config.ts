@@ -43,13 +43,13 @@ const EnvSchema = z.object({
   LIVENESS_PER_HOST_RPS: z.coerce.number().min(0.1).max(50).default(1),
   LIVENESS_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(5_000),
   LIVENESS_IDLE_POLL_SECONDS: z.coerce.number().int().min(1).default(30),
-  // --- Receipt relayer (anchors submitted receipts on-chain; testnet only, decision D05) ---
+  // --- Receipt relayer (anchors submitted receipts on-chain; testnet + mainnet) ---
   MONAD_RPC_URL_MAINNET: z.string().url().optional(),
   MONAD_RPC_URL_TESTNET: z.string().url().optional(),
   /** Overrides the ReceiptRegistry address from @moltforest/chain (e.g. a local Anvil deployment). */
   RECEIPT_REGISTRY_TESTNET: address.optional(),
   RECEIPT_REGISTRY_MAINNET: address.optional(),
-  /** Testnet-only key with a small balance (constraint C6). Without it the relayer is off. */
+  /** Relayer key funded with MON on each network you enable (constraint C6). Without it the relayer is off. */
   RELAYER_PRIVATE_KEY: z
     .string()
     .trim()

@@ -4,8 +4,8 @@
   "pendingEpochApiKey": "",
   "evms": [
     {
-      "creScorePublisherAddress": "0x0000000000000000000000000000000000000000",
-      "scoreRegistryAddress": "0x0000000000000000000000000000000000000000",
+      "creScorePublisherAddress": "0x21487DdF77f01Ba10d147946D44dFD3fD55fd015",
+      "scoreRegistryAddress": "0x764c5C04736ceB34D69409733bb2015F840e12a5",
       "chainName": "monad-mainnet",
       "gasLimit": "800000"
     }

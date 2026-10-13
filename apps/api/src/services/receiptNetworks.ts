@@ -16,8 +16,7 @@ export type ReceiptNetworks = Partial<Record<NetworkName, ReceiptNetwork>>;
 
 /**
  * Networks with a ReceiptRegistry: the deployed address in @moltforest/chain,
- * or an override (e.g. a local Anvil deployment). Decision D05 keeps the real
- * deployment on testnet.
+ * or an override (e.g. a local Anvil deployment). Live on testnet and mainnet.
  */
 export function createReceiptNetworks(opts: {
   rpcUrls: Partial<Record<NetworkName, string>>;

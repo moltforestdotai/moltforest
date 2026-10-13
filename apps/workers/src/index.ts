@@ -86,7 +86,7 @@ const liveness = () => {
   });
 };
 
-/** One relay loop per network with a ReceiptRegistry (normally testnet only). */
+/** One relay loop per network with a ReceiptRegistry (testnet and/or mainnet). */
 const relays = () => {
   const log = logger.child({ worker: "relay" });
   if (!config.RECEIPT_RELAY_ENABLED) return [];
@@ -183,7 +183,7 @@ const reviews = () => {
   });
 };
 
-/** One receipt-event scan per network with a ReceiptRegistry (testnet); off without a HyperSync token. */
+/** One receipt-event scan per network with a ReceiptRegistry; off without a HyperSync token. */
 const receiptEvents = () => {
   const log = logger.child({ worker: "receipt-events" });
   if (!config.RECEIPT_EVENTS_ENABLED) return [];

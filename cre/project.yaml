@@ -12,7 +12,7 @@ staging-settings:
       url: https://testnet-rpc.monad.xyz
 
 # Hackathon / staging: CRE simulate --broadcast on Monad mainnet (MockKeystoneForwarder).
-# Fill addresses in config.mainnet.json after DeployFloor3Mainnet (CRE_MODE=simulation).
+# Mainnet addresses live in config.mainnet.json (DeployFloor3Mainnet, CRE_MODE=simulation).
 mainnet-simulation:
   rpcs:
     - chain-name: monad-mainnet

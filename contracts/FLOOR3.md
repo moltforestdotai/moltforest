@@ -1,7 +1,7 @@
 # Floor 3 — Verifiable scores
 
 **Staging:** Monad testnet (`10143`) — live demo addresses below.  
-**Cutover:** Monad mainnet (`143`) via `DeployFloor3Mainnet.s.sol` before Metropolis ends. Do **not** use the QNTX mainnet 8183 (`0xE8c4…0725`); we deploy our own kernel on both nets.
+**Mainnet:** Floor-3 + `ReceiptRegistry` live on Monad mainnet (`143`). Do **not** use the QNTX mainnet 8183 (`0xE8c4…0725`); we deploy our own kernel on both nets.
 
 ## Decisions locked
 
@@ -56,18 +56,56 @@ On-chain config verified:
 
 Also recorded in `packages/chain/src/networks.ts`.
 
-## Mainnet deploy (plug-in ready)
+## Deployed (Monad mainnet)
 
-See **[MAINNET.md](./MAINNET.md)** — hackathon path uses CRE **simulate** on mainnet with real MON.
+Deployed 2026-10-13 via `DeployFloor3Mainnet` (`CRE_MODE=simulation`). Recorded in `packages/chain` + `cre/epoch-publisher/config.mainnet.json`. See **[MAINNET.md](./MAINNET.md)**.
+
+| Contract | Address | Deploy block | Tx |
+|---|---|---|---|
+| `ScoreRegistry` | `0x764c5C04736ceB34D69409733bb2015F840e12a5` | `112997166` | `0x926e8f9e32664253a11023b4f94da66a694bc235ec170208b72cc0593409ce56` |
+| `ERC8183` (our copy) | `0xC56C3C1aDB951f7747eF88310b036F612606d217` | `112997178` | `0x6a37871d893a847940be5d9e0e1ff02b05d05139895e1bcee786428d801e33a9` |
+| `ScoreGateHook` | `0x7d86EdFEdbE012F7fcE72A95F51fEbEa2f215785` | `112997196` | `0xac09353c5a9223892e41a747dd075a1d18e17656d054cdcc0cc4ebe28930dced` |
+| `CreScorePublisher` | `0x21487DdF77f01Ba10d147946D44dFD3fD55fd015` | `112997221` | `0x307b1a79b2787e81414f7a660c328001015cf590c67fbbafc0f777d14c82b4b1` |
+
+Same 2-of-3 verifiers as testnet. `CreScorePublisher` → MockKeystoneForwarder `0x9eF646…784d`. Mainnet USDC `0x7547…a603` allowlisted. Gate thresholds match testnet.  
+(Note: mainnet `ScoreGateHook` happens to share the same CREATE address as testnet `ScoreRegistry` — different chains.)
 
 ```bash
-pnpm deploy:floor3-mainnet broadcast          # CRE_MODE=simulation → MockForwarder 0x9eF646…784d
-# SCORE_REGISTRY=… ERC8183=… SCORE_GATE_HOOK=… CRE_SCORE_PUBLISHER=… DEPLOY_BLOCK=…
-pnpm record:floor3-mainnet
+# Re-record if needed:
+SCORE_REGISTRY=0x764c5C04736ceB34D69409733bb2015F840e12a5 \
+  ERC8183=0xC56C3C1aDB951f7747eF88310b036F612606d217 \
+  SCORE_GATE_HOOK=0x7d86EdFEdbE012F7fcE72A95F51fEbEa2f215785 \
+  CRE_SCORE_PUBLISHER=0x21487DdF77f01Ba10d147946D44dFD3fD55fd015 \
+  DEPLOY_BLOCK=112997166 pnpm record:floor3-mainnet
 ```
 
-Defaults: mainnet USDC `0x7547…a603`, CRE **simulation** MockForwarder (override with `CRE_MODE=production`).  
-Runbook: `cre/PRODUCTION.md`.
+Runbook: `cre/PRODUCTION.md`. Public docs: `moltforest-web` `/docs#networks` + `/docs#scores`.
+
+## What scoreBps / confidenceBps mean
+
+| Field | Meaning |
+|---|---|
+| **bps** | Basis points: 1 bps = 0.01%. Scale is **0–10_000** (10_000 = 100%). |
+| `scoreBps` | Quality-style signal from verified paid reviews + independent clusters + soft USDC volume bonus. **0** when there is no review signal. |
+| `confidenceBps` | How much independent evidence backs the score. Low confidence = thin evidence, not “bad agent.” |
+
+These leaves are for **market gates** (`ScoreGateHook`), not a hiring verdict. Hiring still uses `/trust` + `/evaluate` + caller policy (constraint C1).
+
+### Off-chain algorithm (`moltforest-score-v1`)
+
+Computed in `packages/scores` (deterministic integers). Pinned on-chain as `algoHash` so the formula can improve later without changing the leaf layout.
+
+```text
+volumeBonus = min(totalPaidVolume, 100_000_000) / 50_000   # ~100 USDC → +2000 bps max
+
+scoreBps =
+  0  if verifiedReviews == 0 AND countedReviewers == 0
+  else clamp(2000 + verifiedReviews*1500 + countedReviewers*2000 + volumeBonus, 0, 10000)
+
+confidenceBps = clamp(countedReviewers*2500 + verifiedReviews*1000, 0, 10000)
+```
+
+Default gate thresholds: score ≥ **5000** bps, confidence ≥ **2000** bps, ≥ **1** independent cluster.
 
 ## Off-chain scoring (`packages/scores`)
 
@@ -149,7 +187,7 @@ Production path (auth, idempotent skip, Forwarder cutover, mainnet): see `cre/PR
 7. ~~Wire scores from live `agent_review_summary`~~ — `pnpm scores:publish-epoch -- --from-db`
 8. ~~Chainlink CRE as epoch publisher~~ — `CreScorePublisher` + hardened `cre/epoch-publisher`
 9. ~~Staging CRE simulate / `--broadcast`~~ — proven locally; VPS via `EPOCH_PIPELINE_*` workers
-10. **Mainnet Floor-3 deploy** — `pnpm deploy:floor3-mainnet broadcast` + `pnpm record:floor3-mainnet` (see MAINNET.md)
+10. ~~**Mainnet Floor-3 deploy**~~ — live (see table above + MAINNET.md)
 11. CRE live DON *(optional)* — Chainlink deploy access + `CRE_MODE=production`
 
 ### VPS unattended (hackathon)

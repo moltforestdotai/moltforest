@@ -3,6 +3,17 @@
 Chainlink accepts **CRE workflow simulation** for the hackathon. Contracts, verifiers, and
 `cre workflow simulate --broadcast` still run on **Monad mainnet with real MON**.
 
+## Live addresses (deployed 2026-10-13)
+
+| Contract | Address | Deploy block |
+|---|---|---|
+| `ScoreRegistry` | `0x764c5C04736ceB34D69409733bb2015F840e12a5` | `112997166` |
+| `ERC8183` (our copy) | `0xC56C3C1aDB951f7747eF88310b036F612606d217` | `112997178` |
+| `ScoreGateHook` | `0x7d86EdFEdbE012F7fcE72A95F51fEbEa2f215785` | `112997196` |
+| `CreScorePublisher` | `0x21487DdF77f01Ba10d147946D44dFD3fD55fd015` | `112997221` |
+
+Also in `packages/chain` `NETWORKS.mainnet` and `cre/epoch-publisher/config.mainnet.json`.
+
 ## What goes on mainnet
 
 | Piece | Role |
@@ -13,7 +24,9 @@ Chainlink accepts **CRE workflow simulation** for the hackathon. Contracts, veri
 | MockKeystoneForwarder `0x9eF646…784d` | Default (`CRE_MODE=simulation`) for simulate `--broadcast` |
 | Prod KeystoneForwarder `0x76c9cf…15E62` | Later DON only (`CRE_MODE=production` or `SetCreForwarder`) |
 
-## One-shot deploy
+## One-shot deploy (already done)
+
+Addresses above are live. Re-deploy only if you intentionally replace the stack:
 
 ```bash
 # .env: DEPLOYER_PRIVATE_KEY (funded MON), VERIFIER_1/2/3
@@ -21,17 +34,10 @@ Chainlink accepts **CRE workflow simulation** for the hackathon. Contracts, veri
 
 pnpm deploy:floor3-mainnet            # dry run
 pnpm deploy:floor3-mainnet broadcast  # spends real MON
-```
-
-From forge logs, record:
-
-```bash
 SCORE_REGISTRY=0x… ERC8183=0x… SCORE_GATE_HOOK=0x… CRE_SCORE_PUBLISHER=0x… \
   DEPLOY_BLOCK=<block> \
   pnpm record:floor3-mainnet
 ```
-
-That fills `packages/chain` `NETWORKS.mainnet` and `cre/epoch-publisher/config.mainnet.json`.
 
 ## Plug mainnet ops (anytime after record)
 

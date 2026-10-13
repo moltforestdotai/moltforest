@@ -16,8 +16,8 @@ export interface NetworkConfig {
   reputationRegistry: `0x${string}`;
   usdc: `0x${string}`;
   /**
-   * Our ReceiptRegistry (decision D06). Deployed on testnet only (D05);
-   * undefined until deployed, which keeps receipt endpoints disabled.
+   * Our ReceiptRegistry (decision D06). Deployed on testnet and mainnet;
+   * undefined until deployed, which keeps receipt endpoints disabled for that network.
    */
   receiptRegistry?: { address: `0x${string}`; deployBlock: number };
   /**
@@ -53,8 +53,13 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     identityRegistry: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
     reputationRegistry: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
     usdc: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
-    // Floor-3: fill after `forge script script/DeployFloor3Mainnet.s.sol` (see FLOOR3.md).
-    // scoreRegistry / agenticCommerce / scoreGateHook / creScorePublisher
+    // Deployed 2026-10-13, tx 0x50a29f7a317d48440d1d6a98bd9f14759b3d1d50bce9fd6868cebe75129cd3b0.
+    receiptRegistry: { address: "0xbd5f1114092A92EF24Aa3ebE00e3c462f572eBFB", deployBlock: 113000318 },
+    // Floor-3 (Monad mainnet) — applied by scripts/apply-floor3-addresses.mjs
+    scoreRegistry: { address: "0x764c5C04736ceB34D69409733bb2015F840e12a5", deployBlock: 112997166 },
+    agenticCommerce: { address: "0xC56C3C1aDB951f7747eF88310b036F612606d217", deployBlock: 112997166 },
+    scoreGateHook: { address: "0x7d86EdFEdbE012F7fcE72A95F51fEbEa2f215785", deployBlock: 112997166 },
+    creScorePublisher: { address: "0x21487DdF77f01Ba10d147946D44dFD3fD55fd015", deployBlock: 112997166 },
     nansenChain: "monad",
   },
   testnet: {

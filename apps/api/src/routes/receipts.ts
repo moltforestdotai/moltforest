@@ -28,7 +28,7 @@ const ReceiptHashParams = z.object({
 });
 
 const RecentReceiptsQuery = z.object({
-  /** Receipts exist on testnet only for now (D05). */
+  /** ReceiptRegistry is live on testnet and mainnet. */
   network: z.enum(NETWORK_NAMES).default("testnet"),
   limit: z.coerce.number().int().min(1).max(100).default(12),
   cursor: z.string().max(512).optional(),

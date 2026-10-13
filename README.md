@@ -22,7 +22,7 @@ moltforest-web, agents
 | Path | What it is |
 |---|---|
 | `apps/indexer` | Envio indexer for the ERC-8004 registries on both chains. Runs only in Docker: Envio has no Windows build. Not part of the pnpm workspace. |
-| `apps/workers` | Background loops. **Enrichment** fetches registration files behind https/http/ipfs agentURIs (≈97% of agents) into `app.agent_profile`. **Liveness** probes every declared http(s) service endpoint every ~15 min into `app.endpoint_status` and daily uptime roll-ups. Both use SSRF protection, time/size limits and per-host rate limits. **Relay** anchors submitted receipts on the ReceiptRegistry with a testnet-only key (off without `RELAYER_PRIVATE_KEY`). **Payments** indexes x402 USDC settlements (`transferWithAuthorization`) that involve an agent's owner or agent wallet, from HyperSync (off without `ENVIO_API_TOKEN`). **Reviews** finds how reviewer wallets were first funded and decides which reviews count. **Nansen** asks Nansen how Monad mainnet reviewer wallets are related (first funder, signing key, multisig) for the Reviews loop and the funding graph (off without `NANSEN_API_KEY`; Nansen has no testnet data). |
+| `apps/workers` | Background loops. **Enrichment** fetches registration files behind https/http/ipfs agentURIs (≈97% of agents) into `app.agent_profile`. **Liveness** probes every declared http(s) service endpoint every ~15 min into `app.endpoint_status` and daily uptime roll-ups. Both use SSRF protection, time/size limits and per-host rate limits. **Relay** anchors submitted receipts on the ReceiptRegistry (testnet + mainnet; off without `RELAYER_PRIVATE_KEY` funded with MON). **Payments** indexes x402 USDC settlements (`transferWithAuthorization`) that involve an agent's owner or agent wallet, from HyperSync (off without `ENVIO_API_TOKEN`). **Reviews** finds how reviewer wallets were first funded and decides which reviews count. **Nansen** asks Nansen how Monad mainnet reviewer wallets are related (first funder, signing key, multisig) for the Reviews loop and the funding graph (off without `NANSEN_API_KEY`; Nansen has no testnet data). |
 | `apps/api` | Express API. Reads the indexer's tables and the enrichment results; never writes the indexer's tables. |
 | `apps/demo-agents` | MoltForest demo agents on Monad testnet (decision D18). The **email verifier** sells one email check for 0.01 test USDC over x402 and signs a receipt for every paid job. |
 | `packages/agent-kit` | Local, non-custodial MCP server for Claude: a testnet wallet that registers an agent, finds and hires agents over x402, and co-signs their receipts. See [packages/agent-kit/README.md](packages/agent-kit/README.md). |
@@ -129,12 +129,12 @@ POST /v1/receipts
 }
 ```
 
-- **Signing domain:** `{ name: "MoltForestReceipts", version: "1", chainId: 10143, verifyingContract: <ReceiptRegistry> }`.
+- **Signing domain:** `{ name: "MoltForestReceipts", version: "1", chainId: <10143|143>, verifyingContract: <ReceiptRegistry> }`.
 - **Who signs:** each agent signs with its ERC-8004 agent wallet, or its owner when no wallet is set. The API checks both signatures on-chain before storing, with exactly the contract's rules.
 - **Co-signing later:** posting the same receipt again with `clientSignature` raises it to level 2.
 - **Anchoring:** the relayer anchors stored receipts (`anchor.status`: `queued` → `sending` → `anchored`). Anyone can also call `ReceiptRegistry.anchor` directly.
 - **Limits:** submissions have their own rate limit (`RECEIPT_SUBMIT_PER_MINUTE`). The relayer pays for at most `RECEIPT_RELAY_MAX_PER_AGENT_PER_DAY` new anchors per provider agent.
-- **Networks:** receipts are enabled only where a ReceiptRegistry is deployed (testnet). Elsewhere, submission answers `503 receipts_not_enabled`. Big integers are strings; there is no single trust score in any response.
+- **Networks:** receipts are enabled on testnet and mainnet (ReceiptRegistry on both). Elsewhere, submission answers `503 receipts_not_enabled`. Big integers are strings; there is no single trust score in any response.
 
 ### Demo agent: email verifier
 

@@ -67,11 +67,14 @@ describe("buildNetworkStats", () => {
     expect(s.payments.x402.provenance.blockRange).toBeUndefined();
   });
 
-  it("notes that receipts are testnet-only on mainnet", () => {
+  it("points mainnet receipts at the live ReceiptRegistry", () => {
     const s = buildNetworkStats("mainnet", { ...COUNTS, receipts: { total: 0, coSigned: 0, anchored: 0 } }, NOW);
-    expect(s.receipts.total).toMatchObject({ value: 0, status: "measured", provenance: { note: "Receipts are recorded on Monad testnet only for now." } });
-    expect(s.receipts.coSigned.provenance.note).toMatch(/^Receipts are recorded on Monad testnet only for now\. Level 2/);
-    expect(s.receipts.total.provenance.contract).toBeUndefined();
+    expect(s.receipts.total).toMatchObject({
+      value: 0,
+      status: "measured",
+      provenance: { contract: { address: "0xbd5f1114092A92EF24Aa3ebE00e3c462f572eBFB" } },
+    });
+    expect(s.receipts.coSigned.provenance.contract?.address).toBe("0xbd5f1114092A92EF24Aa3ebE00e3c462f572eBFB");
   });
 
   it("reports what is not indexed yet as not measured, never as zero", () => {

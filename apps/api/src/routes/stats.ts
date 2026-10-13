@@ -34,7 +34,7 @@ export function buildNetworkStats(network: NetworkName, c: NetworkCounts, now: D
         : undefined;
   const receiptSource: Provenance = n.receiptRegistry
     ? { api: `/v1/receipts?network=${network}`, contract: { address: n.receiptRegistry.address, events: ["ReceiptAnchored", "ReceiptCoSigned"] }, window: "all time" }
-    : { api: `/v1/receipts?network=${network}`, window: "all time", note: "Receipts are recorded on Monad testnet only for now." };
+    : { api: `/v1/receipts?network=${network}`, window: "all time", note: "No ReceiptRegistry is deployed on this network yet." };
   const stillChecking = c.assessed && c.assessed.pendingReviewers > 0 ? "Some reviewer wallets are still being checked, so this number can still drop." : undefined;
 
   return {

@@ -93,7 +93,7 @@ export function buildEvidenceProfile(agent: AgentDetail, stats: EvidenceStats, n
   };
   const receiptSource: Provenance = receiptContract
     ? { api: `${api}/receipts?role=provider`, contract: receiptContract, window: "all time" }
-    : { api: `${api}/receipts?role=provider`, note: "Receipts are recorded on Monad testnet only for now." };
+    : { api: `${api}/receipts?role=provider`, note: "No ReceiptRegistry is deployed on this network yet." };
   const jobSource: Provenance = {
     note: "Not measurable yet: receipts are signed only for completed jobs, so failures and job durations are not observed.",
   };
@@ -280,7 +280,7 @@ export function buildTaskContext(profile: EvidenceProfile, agent: AgentDetail, q
       asked: q.minimumHistory,
       observed: receipts,
       comparison: receipts >= q.minimumHistory ? "meets" : "below",
-      note: "Observed jobs are execution receipts where this agent is the provider (Monad testnet only for now).",
+      note: "Observed jobs are execution receipts where this agent is the provider.",
     });
   }
   if (q.maxLatencyMs !== undefined) {

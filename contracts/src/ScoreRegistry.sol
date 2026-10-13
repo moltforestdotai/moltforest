@@ -16,7 +16,7 @@ import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProo
 ///   leaf = keccak256(bytes.concat(keccak256(abi.encode(agentId, scoreBps, confidenceBps,
 ///          paidReviews, independentClusters, totalPaidVolume))))
 ///
-/// Network: Monad testnet only for MoltForest deployments (same rule as ReceiptRegistry).
+/// Network: Monad testnet and mainnet (Floor-3).
 contract ScoreRegistry is EIP712 {
     using ECDSA for bytes32;
 

@@ -1,14 +1,15 @@
 # Contracts
 
-All MoltForest contracts deploy to **Monad testnet (10143)** only (decision D05 / Floor 3).
+MoltForest contracts deploy to **Monad testnet (10143)** and **Monad mainnet (143)**.
 
 | Contract | Role |
 |---|---|
 | `ReceiptRegistry` | Anchors EIP-712 execution receipt hashes signed by ERC-8004 agents (D06) |
 | `ScoreRegistry` | Publishes epoch Merkle roots with 2-of-3 verifier signatures (Floor 3) |
 | `ScoreGateHook` | ERC-8183 `fund()` bouncer: score thresholds + cluster independence |
+| `CreScorePublisher` | CRE courier → `ScoreRegistry.publishEpoch` |
 
-See [FLOOR3.md](FLOOR3.md) for the verifiable-score design and ERC-8183 ABI notes.
+See [FLOOR3.md](FLOOR3.md) / [MAINNET.md](MAINNET.md) for Floor-3 addresses and ERC-8183 ABI notes.
 
 ## ReceiptRegistry
 
@@ -42,16 +43,25 @@ pnpm contracts:build     # forge build --sizes
 pnpm contracts:abi       # refresh apps/indexer/abis/ReceiptRegistry.json after changing the contract
 ```
 
-## Deploy (testnet)
+## Deploy
 
-The deployer wallet needs about 0.25 MON (faucet). The key is read from `DEPLOYER_PRIVATE_KEY` in the local `.env`; it is never passed on the command line.
+The deployer wallet needs ~0.25 MON (testnet faucet or mainnet funded). The key is read from `DEPLOYER_PRIVATE_KEY` in the local `.env`; it is never passed on the command line.
 
 ```bash
-scripts/deploy-receipt-registry.sh             # simulate: prints the address it would deploy to
-scripts/deploy-receipt-registry.sh broadcast   # deploy
+# Testnet
+pnpm deploy:receipt-registry                   # simulate
+pnpm deploy:receipt-registry broadcast         # deploy
+
+# Mainnet (uses ERC-8004 Identity Registry 0x8004A169…)
+pnpm deploy:receipt-registry-mainnet           # simulate
+pnpm deploy:receipt-registry-mainnet broadcast # deploy
 ```
 
-Then:
+Then set `receiptRegistry` in `packages/chain/src/networks.ts` and keep the broadcast JSON under `contracts/broadcast/`.
 
-1. Set the address and deploy block in `packages/chain/src/networks.ts` (`receiptRegistry`).
-2. Commit `broadcast/DeployReceiptRegistry.s.sol/10143/run-latest.json` as the deployment record.
+### Live addresses
+
+| Network | ReceiptRegistry | Deploy block |
+|---|---|---|
+| Testnet | `0x4d2a256fCaAc8e52e4B91e977EF6dDD56E980f98` | `67037698` |
+| Mainnet | `0xbd5f1114092A92EF24Aa3ebE00e3c462f572eBFB` | `113000318` |
