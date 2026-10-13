@@ -4,6 +4,7 @@ packages:
   - apps/api
   - apps/workers
   - apps/demo-agents
+  - apps/demo-hire-poc
   - packages/*
 
 allowBuilds:
