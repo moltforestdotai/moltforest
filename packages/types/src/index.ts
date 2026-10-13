@@ -450,6 +450,8 @@ export interface FundingGraphFundingEdge {
   from: string;
   to: string;
   txHash: string | null;
+  /** MON sent in that first transfer, in wei as a decimal string; null when not recorded. */
+  value: string | null;
   /** Set when the funded wallet later sent its remainder back to the funder. */
   sweepTxHash: string | null;
 }
