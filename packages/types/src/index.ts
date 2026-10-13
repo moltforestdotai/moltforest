@@ -410,9 +410,11 @@ export interface FundingGraphNode {
    * The agent's own addresses are drawn apart from the wallets that reviewed
    * it. `funder` is a wallet that funded a reviewer without reviewing itself;
    * `linked` is an address Nansen ties to a reviewer some other way, such as
-   * the key that signs for it (decision D47).
+   * the key that signs for it (decision D47). `counterparty` is a wallet that
+   * paid the agent's addresses through x402, or was paid by them, without
+   * reviewing it (decision D48).
    */
-  role: "owner" | "agentWallet" | "reviewer" | "funder" | "linked";
+  role: "owner" | "agentWallet" | "reviewer" | "funder" | "linked" | "counterparty";
   /** The funding group this wallet belongs to; null before the agent is assessed. */
   cluster: string | null;
   fundingStatus: WalletFundingStatus;
@@ -470,6 +472,40 @@ export interface FundingGraphPaymentEdge {
   endpoint: string | null;
 }
 
+/**
+ * The x402 payments between one of the agent's addresses and one other wallet
+ * in one direction, summed (decision D48). Payments between the agent's own
+ * addresses are not edges: see `FundingGraph.payments.self`.
+ */
+export interface FundingGraphPaidEdge {
+  /** The payer. */
+  from: string;
+  /** The payee. */
+  to: string;
+  payments: number;
+  amountUsdc: string;
+  lastAt: string;
+  /** The latest of these payments. */
+  lastTxHash: string;
+}
+
+/** What the funding graph knows about the agent's x402 payments (decision D48). */
+export interface FundingGraphPayments {
+  /** Payments between the agent's owner and agent wallet: never income. */
+  self: { payments: number; amountUsdc: string };
+  /** Payments with other wallets, and how many wallets that is. */
+  payments: number;
+  wallets: number;
+  /**
+   * How many indexed agents use each of this agent's addresses, as owner or
+   * agent wallet. Payments are matched by address, so with more than one the
+   * same payments show on each of those agents.
+   */
+  addresses: Array<{ address: string; agentCount: number }>;
+  /** Wallets left out because of the cap, with their payments; null when all of them fit. */
+  omitted: { wallets: number; payments: number } | null;
+}
+
 /** A group of reviewer wallets linked by funding; a cluster counts as one reviewer. */
 export interface FundingGraphCluster {
   root: string;
@@ -484,8 +520,9 @@ export interface FundingGraphCluster {
 
 /**
  * The wallets that reviewed one agent and how they are linked (decisions D31,
- * D39), as a graph rather than a table. Nothing here is a verdict: edges carry
- * the transactions they are drawn from (constraints C1, C2, C5).
+ * D39), as a graph rather than a table, plus the wallets its addresses paid or
+ * were paid by through x402 (decision D48). Nothing here is a verdict: edges
+ * carry the transactions they are drawn from (constraints C1, C2, C5).
  */
 export interface FundingGraph {
   network: NetworkName;
@@ -502,6 +539,8 @@ export interface FundingGraph {
     review: FundingGraphReviewEdge[];
     payment: FundingGraphPaymentEdge[];
     nansen: FundingGraphNansenEdge[];
+    /** x402 payments with other wallets, one edge per wallet and direction (decision D48). */
+    paid: FundingGraphPaidEdge[];
   };
   clusters: FundingGraphCluster[];
   /**
@@ -513,6 +552,8 @@ export interface FundingGraph {
   limit: number;
   /** Reviewer wallets left out because of `limit`; null when all of them fit. */
   omitted: { wallets: number; reviews: number } | null;
+  /** The agent's x402 payments (decision D48); null before payments are indexed. */
+  payments: FundingGraphPayments | null;
 }
 
 export interface SyncStatus {

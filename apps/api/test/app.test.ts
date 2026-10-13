@@ -557,6 +557,60 @@ describe("API (integration)", () => {
       }
     });
 
+    run("adds the wallets an agent paid or was paid by to its funding graph (decision D48)", async () => {
+      const payer = "0x00000000000000000000000000000000000000c1";
+      const payee = "0x00000000000000000000000000000000000000d1";
+      const insertPayment = async (tx: string, block: number, from: string, to: string, amount: number) => {
+        await db!.query(
+          `INSERT INTO "${SCHEMA}".x402_payment (chain_id, tx_hash, log_index, block_number, block_time, asset, payer, payee, amount, facilitator)
+           VALUES (143, $1, 1, $2::bigint, '2026-10-01T00:00:00Z'::timestamptz + $2::int * interval '1 second', '0xusdc', $3, $4, $5, '0xfac')`,
+          [tx, block, from, to, amount],
+        );
+      };
+      // Agent 1 has no reviews. Its owner was paid twice by one wallet, paid another once, and paid itself once.
+      await insertPayment(`0x${"c1".repeat(32)}`, 5000, payer, OWNER_A, 10000);
+      await insertPayment(`0x${"c2".repeat(32)}`, 5001, payer, OWNER_A, 20000);
+      await insertPayment(`0x${"d1".repeat(32)}`, 5002, OWNER_A, payee, 1000000);
+      await insertPayment(`0x${"aa".repeat(32)}`, 5003, OWNER_A, OWNER_A, 10000);
+
+      try {
+        const body = (await request(app).get("/v1/agents/mainnet/1/funding-graph")).body as FundingGraph;
+        expect(body.nodes.map((n) => [n.address, n.role])).toEqual([
+          [OWNER_A, "owner"],
+          [payer, "counterparty"],
+          [payee, "counterparty"],
+        ]);
+        expect(body.edges.paid).toEqual([
+          { from: payer, to: OWNER_A, payments: 2, amountUsdc: "0.03", lastAt: "2026-10-01T01:23:21.000Z", lastTxHash: `0x${"c2".repeat(32)}` },
+          { from: OWNER_A, to: payee, payments: 1, amountUsdc: "1", lastAt: "2026-10-01T01:23:22.000Z", lastTxHash: `0x${"d1".repeat(32)}` },
+        ]);
+        // The self-payment is summed apart, and the owner's other agents bring the same payments.
+        expect(body.payments).toMatchObject({ self: { payments: 1, amountUsdc: "0.01" }, payments: 3, wallets: 2, omitted: null });
+        expect(body.payments?.addresses).toEqual([{ address: OWNER_A, agentCount: expect.any(Number) }]);
+        expect(body.payments!.addresses[0]!.agentCount).toBeGreaterThan(1);
+        expect(body.clusters).toEqual([]);
+
+        // Past the cap, the quietest wallets are summarised. The cap is 1,000 wallets.
+        await db!.query(
+          `INSERT INTO "${SCHEMA}".x402_payment (chain_id, tx_hash, log_index, block_number, block_time, asset, payer, payee, amount, facilitator)
+           SELECT 143, '0xe' || lpad(to_hex(i), 63, '0'), 1, 6000 + i, now(), '0xusdc', '0xf' || lpad(to_hex(i), 39, '0'), $1, 1, '0xfac'
+             FROM generate_series(1, 1000) AS i`,
+          [OWNER_A],
+        );
+        const capped = (await request(app).get("/v1/agents/mainnet/1/funding-graph")).body as FundingGraph;
+        expect(capped.nodes.filter((n) => n.role === "counterparty")).toHaveLength(1000);
+        expect(capped.payments).toMatchObject({ wallets: 1002, payments: 1003, omitted: { wallets: 2, payments: 2 } });
+        expect(capped.edges.paid[0]).toMatchObject({ from: payer, payments: 2 });
+
+        // Nothing paid: an empty summary, not null, once payments are indexed.
+        const testnet = (await request(app).get("/v1/agents/testnet/0/funding-graph")).body as FundingGraph;
+        expect(testnet.payments).toEqual({ self: { payments: 0, amountUsdc: "0" }, payments: 0, wallets: 0, addresses: [], omitted: null });
+        expect(testnet.edges.paid).toEqual([]);
+      } finally {
+        await db!.query(`DELETE FROM "${SCHEMA}".x402_payment`);
+      }
+    });
+
     run("returns the evidence profile with task context facts on /trust", async () => {
       const res = await request(app).get("/v1/agents/mainnet/0/trust?minimumHistory=3&requiredProof=client-cosigned&maxLatencyMs=500&taskType=review");
       expect(res.status).toBe(200);

@@ -6,6 +6,7 @@ import type {
   FundingGraphFundingEdge,
   FundingGraphNansenEdge,
   FundingGraphNode,
+  FundingGraphPaidEdge,
   FundingGraphPaymentEdge,
   FundingGraphReviewEdge,
   ReviewExclusionReason,
@@ -17,6 +18,8 @@ import { isMissingRelation } from "./sync.js";
 /** Reviewer wallets drawn by default, and the most a caller may ask for. 8,000 covers the known mainnet farms (agent #182 had 7,665). */
 export const DEFAULT_GRAPH_LIMIT = 8_000;
 export const MAX_GRAPH_LIMIT = 10_000;
+/** Wallets the agent paid or was paid by that are drawn; the busiest first (decision D48). Mainnet's most had 21 in October 2026. */
+export const PAYMENT_WALLET_LIMIT = 1_000;
 
 interface ReviewerRow {
   client: string;
@@ -36,6 +39,11 @@ interface ReviewerRow {
  * the wallet that first funded each of them, and the x402 payments that back a
  * counted review (decision D39).
  *
+ * The wallets the agent's addresses paid or were paid by through x402 are
+ * added too, one edge per wallet and direction, so an agent without reviews
+ * still has a graph (decision D48). Payments are matched by address, as on
+ * the agent's payments list.
+ *
  * Reviewers are ordered by how many reviews they wrote and capped, because a
  * farmed agent can have thousands of them; the remainder is summarised rather
  * than dropped silently.
@@ -51,6 +59,7 @@ export function createFundingGraphRepository(db: Db, schemas: { indexer: string;
   const funding = table(schemas.app, "wallet_funding");
   const nansenWallets = table(schemas.app, "nansen_wallet");
   const nansenRelations = table(schemas.app, "nansen_relation");
+  const x402Payments = table(schemas.app, "x402_payment");
 
   /** Rows of a query on the Nansen tables, or none before they are migrated. */
   const optional = async <T>(query: Promise<{ rows: T[] }>): Promise<T[]> => {
@@ -209,6 +218,90 @@ export function createFundingGraphRepository(db: Db, schemas: { indexer: string;
         }
       }
 
+      // x402 payments with other wallets (decision D48). Self-payments are summed, never drawn as income.
+      let paymentSummary: FundingGraph["payments"] = null;
+      const paidEdges: FundingGraphPaidEdge[] = [];
+      try {
+        const own = [...targetAddrs];
+        const matched = `FROM ${x402Payments} WHERE chain_id = $1 AND (payer = ANY($2::text[]) OR payee = ANY($2::text[]))`;
+        const [pairs, sums] = await Promise.all([
+          db.query<{ payer: string; payee: string; payments: number; amount: string; last_at: Date; last_tx: string }>(
+            `WITH p AS (
+               SELECT payer, payee, amount, block_time, block_number, tx_hash, log_index,
+                      CASE WHEN payer = ANY($2::text[]) THEN payee ELSE payer END AS wallet
+                 ${matched} AND NOT (payer = ANY($2::text[]) AND payee = ANY($2::text[]))
+             ), busiest AS (
+               SELECT wallet FROM p GROUP BY wallet ORDER BY count(*) DESC, wallet LIMIT $3
+             )
+             SELECT p.payer, p.payee, count(*)::int AS payments, sum(p.amount)::text AS amount, max(p.block_time) AS last_at,
+                    (array_agg(p.tx_hash ORDER BY p.block_number DESC, p.log_index DESC))[1] AS last_tx
+               FROM p JOIN busiest USING (wallet)
+              GROUP BY p.payer, p.payee
+              ORDER BY payments DESC, p.payer, p.payee`,
+            [chainId, own, PAYMENT_WALLET_LIMIT],
+          ),
+          db.query<{ self: number; self_amount: string; payments: number; wallets: number }>(
+            `SELECT count(*) FILTER (WHERE self)::int AS self,
+                    coalesce(sum(amount) FILTER (WHERE self), 0)::text AS self_amount,
+                    count(*) FILTER (WHERE NOT self)::int AS payments,
+                    count(DISTINCT wallet) FILTER (WHERE NOT self)::int AS wallets
+               FROM (SELECT amount, payer = ANY($2::text[]) AND payee = ANY($2::text[]) AS self,
+                            CASE WHEN payer = ANY($2::text[]) THEN payee ELSE payer END AS wallet
+                       ${matched}) p`,
+            [chainId, own],
+          ),
+        ]);
+        const totals = sums.rows[0] ?? { self: 0, self_amount: "0", payments: 0, wallets: 0 };
+        const shared =
+          totals.self + totals.payments > 0
+            ? await db.query<{ address: string; agents: number }>(
+                `SELECT x.address, count(a.agent_id)::int AS agents
+                   FROM unnest($2::text[]) AS x(address)
+                   LEFT JOIN ${agents} a ON a.chain_id = $1 AND (lower(a.owner) = x.address OR lower(a.agent_wallet) = x.address)
+                  GROUP BY x.address ORDER BY x.address`,
+                [chainId, own],
+              )
+            : { rows: [] };
+
+        const drawnWallets = new Set<string>();
+        let drawnPayments = 0;
+        for (const row of pairs.rows) {
+          const wallet = targetAddrs.has(row.payer) ? row.payee : row.payer;
+          drawnWallets.add(wallet);
+          drawnPayments += row.payments;
+          // Not part of the reviewer clusters: a counterparty wrote no review here.
+          addNode({
+            address: wallet,
+            role: "counterparty",
+            cluster: null,
+            fundingStatus: "pending",
+            reviews: 0,
+            countedReviews: 0,
+            verifiedReviews: 0,
+            notCountedReason: null,
+            nansenLabel: null,
+          });
+          paidEdges.push({
+            from: row.payer,
+            to: row.payee,
+            payments: row.payments,
+            amountUsdc: formatUnits(BigInt(row.amount), 6),
+            lastAt: row.last_at.toISOString(),
+            lastTxHash: row.last_tx,
+          });
+        }
+        paymentSummary = {
+          self: { payments: totals.self, amountUsdc: formatUnits(BigInt(totals.self_amount), 6) },
+          payments: totals.payments,
+          wallets: totals.wallets,
+          addresses: shared.rows.map((row) => ({ address: row.address, agentCount: row.agents })),
+          omitted:
+            totals.wallets > drawnWallets.size ? { wallets: totals.wallets - drawnWallets.size, payments: totals.payments - drawnPayments } : null,
+        };
+      } catch (err) {
+        if (!isMissingRelation(err)) throw err;
+      }
+
       // What Nansen says about the drawn reviewers (decision D47).
       const nansenEdges: FundingGraphNansenEdge[] = [];
       let nansenCoverage: FundingGraph["nansen"] = null;
@@ -325,11 +418,12 @@ export function createFundingGraphRepository(db: Db, schemas: { indexer: string;
         agentWallet,
         assessedAt: assessed.rows[0]?.assessed_at.toISOString() ?? null,
         nodes,
-        edges: { funding: fundingEdges, review: reviewEdges, payment: paymentEdges, nansen: nansenEdges },
+        edges: { funding: fundingEdges, review: reviewEdges, payment: paymentEdges, nansen: nansenEdges, paid: paidEdges },
         clusters: [...clusters.values()].sort((a, b) => b.wallets - a.wallets || a.root.localeCompare(b.root)),
         nansen: nansenCoverage,
         limit,
         omitted: omittedWallets > 0 ? { wallets: omittedWallets, reviews: totalReviews - drawnReviews } : null,
+        payments: paymentSummary,
       };
     },
   };
