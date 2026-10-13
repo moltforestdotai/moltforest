@@ -20,7 +20,7 @@ import { createProfileRepository } from "./enrich/repository.js";
 import { runBatch } from "./enrich/runner.js";
 import { createLivenessRepository } from "./liveness/repository.js";
 import { runLivenessBatch } from "./liveness/runner.js";
-import { NETWORK_NAMES, NETWORKS } from "@moltforest/chain";
+import { NETWORK_NAMES, NETWORKS, creSimulateTarget } from "@moltforest/chain";
 import { createAnchorChain } from "./anchor/chain.js";
 import { createAnchorRepository } from "./anchor/repository.js";
 import { runAnchorBatch } from "./anchor/runner.js";
@@ -232,12 +232,14 @@ const scores = () => {
       return [];
     }
     const netLog = log.child({ network: name });
+    const creTarget = config.EPOCH_PIPELINE_CRE_TARGET.trim() || creSimulateTarget(name);
     netLog.info(
       {
         allAgents: config.EPOCH_PIPELINE_ALL_AGENTS,
         creBroadcast: config.EPOCH_PIPELINE_CRE_BROADCAST,
         fallback: config.EPOCH_PIPELINE_FALLBACK_PUBLISH,
         creDir,
+        creTarget,
       },
       "epoch pipeline on",
     );
@@ -253,7 +255,7 @@ const scores = () => {
           allAgents: config.EPOCH_PIPELINE_ALL_AGENTS,
           creBroadcast: config.EPOCH_PIPELINE_CRE_BROADCAST,
           creDir,
-          creTarget: config.EPOCH_PIPELINE_CRE_TARGET,
+          creTarget,
           fallbackPublish: config.EPOCH_PIPELINE_FALLBACK_PUBLISH,
           publisherKey,
           rpcUrl: rpcUrls[name] ?? net.defaultRpcUrl,

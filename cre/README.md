@@ -12,7 +12,7 @@ courier**; verifiers still sign off-chain.
    Binary lives at `~/.cre/bin/cre` — add to `PATH`, or use the install script.
 2. **Auth:** `cre login` (browser) or `CRE_API_KEY` from [app.chain.link](https://app.chain.link) Account Settings — required even for local simulate
 3. Bun ≥ 1.2.21 (`curl -fsSL https://bun.sh/install | bash`)
-4. Funded key in `cre/.env` as `CRE_ETH_PRIVATE_KEY=0x…` (testnet for staging `--broadcast`; mainnet MON for mainnet)
+4. Funded key in `cre/.env` as `CRE_ETH_PRIVATE_KEY=0x…` (test MON for testnet; **real MON** for mainnet simulate `--broadcast`)
 5. API + Postgres (`pnpm db:migrate`, `pnpm dev:api`)
 6. Optional: `SCORES_PENDING_API_KEY` in API `.env` + matching `pendingEpochApiKey` in workflow config
 
@@ -29,7 +29,7 @@ Deploy tx: `0x29472c41e3884805ba77a05ff469c068e1e65d6e69755fb7e82963c8999a7c38` 
 Configs already point at this publisher. For a **production** CRE deploy on testnet later, call
 `setForwarderAddress(0xF8344CFd5c43616a4366C34E3EEE75af79a74482)` (or redeploy).
 
-Mainnet: `DeployFloor3Mainnet.s.sol` (prod Forwarder `0x76c9cf…15E62`), then fill `config.mainnet.json`.
+Mainnet: see `contracts/MAINNET.md` — `pnpm deploy:floor3-mainnet` (default MockForwarder `0x9eF646…784d` for simulate) then `pnpm record:floor3-mainnet`.
 
 ```bash
 cd contracts
@@ -64,8 +64,11 @@ export PATH="$HOME/.cre/bin:$PATH"
 cd cre/epoch-publisher && bun install
 cd ..
 cre workflow simulate epoch-publisher --target local-simulation
-# real Monad tx:
+# real Monad testnet tx:
 cre workflow simulate epoch-publisher --target local-simulation --broadcast
+
+# Monad mainnet (after DeployFloor3Mainnet + record; real MON):
+cre workflow simulate epoch-publisher --target mainnet-simulation --broadcast
 ```
 
 Dry-run does not need gas; `--broadcast` does.

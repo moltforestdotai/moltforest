@@ -12,8 +12,8 @@ import {ScoreRegistry} from "./ScoreRegistry.sol";
 /// Report ABI (must stay in sync with `cre/epoch-publisher` workflow):
 ///   (uint64 epochId, bytes32 inputsRoot, bytes32 scoresRoot, bytes32 algoHash, bytes sig0, bytes sig1)
 ///
-/// Network: Monad testnet. Use MockKeystoneForwarder for `cre workflow simulate --broadcast`,
-/// production KeystoneForwarder after deploy (see FLOOR3.md / Chainlink Forwarder Directory).
+/// Network: Monad testnet or mainnet. Use MockKeystoneForwarder for `cre workflow simulate --broadcast`
+/// (hackathon), production KeystoneForwarder for live DON (see MAINNET.md / Forwarder Directory).
 contract CreScorePublisher is ReceiverTemplate {
     ScoreRegistry public immutable scoreRegistry;
 

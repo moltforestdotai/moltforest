@@ -10,7 +10,10 @@ CRE delivers `publishEpoch` through `CreScorePublisher`.
 | Local simulate | testnet 10143 | MockKeystoneForwarder `0xB9F79d…Ad192` | `0xEDAffF…A3c5` | `http://127.0.0.1:4000/...` (optional auth) |
 | Staging broadcast | testnet | Same mock (CLI simulate `--broadcast`) | same | staging API + `SCORES_PENDING_API_KEY` |
 | Testnet prod DON | testnet | KeystoneForwarder `0xF8344C…4482` | same after `setForwarderAddress` | public HTTPS + Bearer |
-| **Mainnet** | mainnet 143 | KeystoneForwarder `0x76c9cf…15E62` | after `DeployFloor3Mainnet` | `?network=mainnet` + Bearer |
+| **Mainnet simulate (hackathon)** | mainnet 143 | MockKeystoneForwarder `0x9eF646…784d` | after `DeployFloor3Mainnet` (`CRE_MODE=simulation`) | `?network=mainnet` + Bearer |
+| **Mainnet DON** | mainnet 143 | KeystoneForwarder `0x76c9cf…15E62` | same after `SetCreForwarder` / redeploy | same |
+
+Full mainnet plug-in: [contracts/MAINNET.md](../contracts/MAINNET.md).
 
 ## Staging E2E (required before calling CRE “integrated”)
 
@@ -64,25 +67,28 @@ CRE_SCORE_PUBLISHER=0xEDAffF4855de733de33aF792b7DD4ddf1670A3c5 \
    Requires `VERIFIER_*_PRIVATE_KEY`, CRE CLI + auth, and `cre/.env` (`CRE_ETH_PRIVATE_KEY`) on the box.
 6. Keep manual `publish-epoch` as **break-glass** only (document who may run it).
 
-## Mainnet cutover (Metropolis)
+## Mainnet cutover (hackathon = simulate + real MON)
 
-1. Deploy the stack (same verifier EOAs as testnet, or a fresh 2-of-3 set):
+1. Deploy (`CRE_MODE=simulation` default → MockForwarder `0x9eF646…784d`):
 
 ```bash
-cd contracts
-# VERIFIER_1/2/3, DEPLOYER_PRIVATE_KEY in env
-forge script script/DeployFloor3Mainnet.s.sol:DeployFloor3Mainnet \
-  --rpc-url https://rpc.monad.xyz --broadcast -vvvv
+pnpm deploy:floor3-mainnet broadcast
+# then plug addresses:
+SCORE_REGISTRY=… ERC8183=… SCORE_GATE_HOOK=… CRE_SCORE_PUBLISHER=… DEPLOY_BLOCK=… \
+  pnpm record:floor3-mainnet
 ```
 
-2. Record addresses in `packages/chain/src/networks.ts` (`NETWORKS.mainnet`) and
-   `cre/epoch-publisher/config.mainnet.json`.
-3. Prepare + stage: `EPOCH_ID=1 pnpm scores:prepare-epoch -- --demo --network mainnet`
-4. Pending fetch: `GET /v1/scores/pending-epoch?network=mainnet` (Bearer if keyed).
-5. CRE: `cre workflow deploy epoch-publisher --target mainnet-settings` (needs Chainlink deploy access).
-6. Break-glass: `pnpm scores:publish-epoch -- --demo --network mainnet`.
+2. Fund `CRE_ETH_PRIVATE_KEY` (and deployer) with **real MON**.
+3. Prepare: `pnpm scores:prepare-epoch -- --from-db --all-agents --network mainnet`
+4. CRE simulate: `cre workflow simulate epoch-publisher --target mainnet-simulation --broadcast`
+5. Or VPS: `EPOCH_PIPELINE_NETWORKS=mainnet` (CRE target auto = `mainnet-simulation`).
+6. Break-glass: `pnpm scores:publish-epoch -- --from-db --all-agents --network mainnet`.
 
-Default CRE Forwarder on mainnet deploy is production `0x76c9cf548b4179F8901cda1f8623568b58215E62`.
+### Later: live DON
+
+`CRE_MODE=production` + `SetCreForwarder`, then
+`cre workflow deploy epoch-publisher --target mainnet-settings` (needs deploy access).
+Prod Forwarder: `0x76c9cf548b4179F8901cda1f8623568b58215E62`.
 
 ## Idempotency
 

@@ -31,6 +31,8 @@
     "scores:publish-epoch": "pnpm --filter @moltforest/scores publish-epoch",
     "scores:prepare-epoch": "pnpm --filter @moltforest/scores prepare-epoch",
     "scores:demo-gate": "pnpm --filter @moltforest/scores demo-score-gate",
+    "deploy:floor3-mainnet": "bash scripts/deploy-floor3-mainnet.sh",
+    "record:floor3-mainnet": "node scripts/apply-floor3-addresses.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test"
   }

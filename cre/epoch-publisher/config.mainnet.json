@@ -1,6 +1,6 @@
 {
   "schedule": "0 0 * * * *",
-  "pendingEpochUrl": "https://api.moltforest.com/v1/scores/pending-epoch?network=mainnet",
+  "pendingEpochUrl": "https://api.moltforest.ai/v1/scores/pending-epoch?network=mainnet",
   "pendingEpochApiKey": "",
   "evms": [
     {

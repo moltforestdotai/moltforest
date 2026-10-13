@@ -14,6 +14,14 @@ staging-settings:
     config-path: "./config.staging.json"
     secrets-path: ""
 
+mainnet-simulation:
+  user-workflow:
+    workflow-name: "moltforest-epoch-publisher-mainnet-sim"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.mainnet.json"
+    secrets-path: ""
+
 mainnet-settings:
   user-workflow:
     workflow-name: "moltforest-epoch-publisher-mainnet"

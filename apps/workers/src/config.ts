@@ -109,7 +109,11 @@ const EnvSchema = z.object({
   EPOCH_PIPELINE_CRE_BROADCAST: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
   /** Absolute or repo-relative path to moltforest/cre (project.yaml). */
   EPOCH_PIPELINE_CRE_DIR: z.string().default("cre"),
-  EPOCH_PIPELINE_CRE_TARGET: z.string().default("local-simulation"),
+  /**
+   * CRE CLI --target. Empty = auto: testnet→local-simulation, mainnet→mainnet-simulation.
+   * Override for DON: mainnet-settings / staging-settings.
+   */
+  EPOCH_PIPELINE_CRE_TARGET: z.string().default(""),
   /** If CRE fails, call ScoreRegistry.publishEpoch with the cosigned payload (break-glass). */
   EPOCH_PIPELINE_FALLBACK_PUBLISH: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),

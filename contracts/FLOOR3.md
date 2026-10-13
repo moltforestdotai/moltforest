@@ -56,17 +56,18 @@ On-chain config verified:
 
 Also recorded in `packages/chain/src/networks.ts`.
 
-## Mainnet deploy (pending)
+## Mainnet deploy (plug-in ready)
+
+See **[MAINNET.md](./MAINNET.md)** — hackathon path uses CRE **simulate** on mainnet with real MON.
 
 ```bash
-cd contracts
-# Env: VERIFIER_1, VERIFIER_2, VERIFIER_3, DEPLOYER_PRIVATE_KEY
-forge script script/DeployFloor3Mainnet.s.sol:DeployFloor3Mainnet \
-  --rpc-url https://rpc.monad.xyz --broadcast -vvvv
+pnpm deploy:floor3-mainnet broadcast          # CRE_MODE=simulation → MockForwarder 0x9eF646…784d
+# SCORE_REGISTRY=… ERC8183=… SCORE_GATE_HOOK=… CRE_SCORE_PUBLISHER=… DEPLOY_BLOCK=…
+pnpm record:floor3-mainnet
 ```
 
-Defaults: mainnet USDC `0x7547…a603`, CRE prod Forwarder `0x76c9cf…15E62`.  
-After broadcast: paste addresses into `NETWORKS.mainnet` and `cre/epoch-publisher/config.mainnet.json`. Runbook: `cre/PRODUCTION.md`.
+Defaults: mainnet USDC `0x7547…a603`, CRE **simulation** MockForwarder (override with `CRE_MODE=production`).  
+Runbook: `cre/PRODUCTION.md`.
 
 ## Off-chain scoring (`packages/scores`)
 
@@ -148,8 +149,8 @@ Production path (auth, idempotent skip, Forwarder cutover, mainnet): see `cre/PR
 7. ~~Wire scores from live `agent_review_summary`~~ — `pnpm scores:publish-epoch -- --from-db`
 8. ~~Chainlink CRE as epoch publisher~~ — `CreScorePublisher` + hardened `cre/epoch-publisher`
 9. ~~Staging CRE simulate / `--broadcast`~~ — proven locally; VPS via `EPOCH_PIPELINE_*` workers
-10. **Mainnet Floor-3 deploy** (`DeployFloor3Mainnet`) + fill `NETWORKS.mainnet` + CRE mainnet config *(defer for hackathon)*
-11. CRE deploy access from Chainlink → live DON on testnet then mainnet *(optional if simulate-on-VPS is accepted)*
+10. **Mainnet Floor-3 deploy** — `pnpm deploy:floor3-mainnet broadcast` + `pnpm record:floor3-mainnet` (see MAINNET.md)
+11. CRE live DON *(optional)* — Chainlink deploy access + `CRE_MODE=production`
 
 ### VPS unattended (hackathon)
 

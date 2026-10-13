@@ -11,7 +11,14 @@ staging-settings:
     - chain-name: monad-testnet
       url: https://testnet-rpc.monad.xyz
 
-# Mainnet cutover target (fill consumer addresses in config.mainnet.json after deploy).
+# Hackathon / staging: CRE simulate --broadcast on Monad mainnet (MockKeystoneForwarder).
+# Fill addresses in config.mainnet.json after DeployFloor3Mainnet (CRE_MODE=simulation).
+mainnet-simulation:
+  rpcs:
+    - chain-name: monad-mainnet
+      url: https://rpc.monad.xyz
+
+# Live DON cutover (needs Chainlink deploy access + prod Forwarder on CreScorePublisher).
 mainnet-settings:
   rpcs:
     - chain-name: monad-mainnet
